@@ -5,20 +5,21 @@ import { notFound } from 'next/navigation'
 export default async function QRPage({
   params,
 }: {
-  params: { school_slug: string; student_id: string }
+  params: Promise<{ school_slug: string; student_id: string }>
 }) {
+  const { school_slug, student_id } = await params
   const supabase = await createClient()
 
   const { data: student } = await supabase
     .from('students')
     .select('*')
-    .eq('id', params.student_id)
+    .eq('id', student_id)
     .single()
 
   const { data: school } = await supabase
     .from('schools')
     .select('name')
-    .eq('slug', params.school_slug)
+    .eq('slug', school_slug)
     .single()
 
   if (!student) notFound()
@@ -27,7 +28,7 @@ export default async function QRPage({
     <QRCardClient
       student={student}
       schoolName={school?.name ?? ''}
-      schoolSlug={params.school_slug}
+      schoolSlug={school_slug}
     />
   )
 }

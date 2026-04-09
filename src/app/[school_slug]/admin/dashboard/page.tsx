@@ -2,21 +2,40 @@ import { createClient } from '@/lib/supabase/server'
 import { format } from 'date-fns'
 import { Users, UserCheck, UserX, Clock } from 'lucide-react'
 
-export default async function DashboardPage() {
+import { notFound } from 'next/navigation'
+
+export default async function DashboardPage({
+  params,
+}: {
+  params: Promise<{ school_slug: string }>
+}) {
+  const { school_slug } = await params
   const supabase = await createClient()
+
+  const { data: school } = await supabase
+    .from('schools')
+    .select('id')
+    .eq('slug', school_slug)
+    .single()
+
+  if (!school) notFound()
+
   const today = format(new Date(), 'yyyy-MM-dd')
+  const schoolId = school.id
 
   const [studentsRes, presentRes, lateRes] = await Promise.all([
-    supabase.from('students').select('id', { count: 'exact' }).eq('is_active', true),
+    supabase.from('students').select('id', { count: 'exact' }).eq('is_active', true).eq('school_id', schoolId),
     supabase.from('attendance_logs')
       .select('id', { count: 'exact' })
       .eq('scan_type', 'entry')
+      .eq('school_id', schoolId)
       .gte('scanned_at', `${today}T00:00:00`)
       .lte('scanned_at', `${today}T23:59:59`),
     supabase.from('attendance_logs')
       .select('id', { count: 'exact' })
       .eq('scan_type', 'entry')
       .eq('is_late', true)
+      .eq('school_id', schoolId)
       .gte('scanned_at', `${today}T00:00:00`)
       .lte('scanned_at', `${today}T23:59:59`),
   ])
@@ -40,6 +59,7 @@ export default async function DashboardPage() {
       id, scan_type, scanned_at, is_late, scanned_by_name,
       students (full_name, class)
     `)
+    .eq('school_id', schoolId)
     .gte('scanned_at', `${today}T00:00:00`)
     .order('scanned_at', { ascending: false })
     .limit(10)
