@@ -1,4 +1,6 @@
-import React from "react";
+'use client'
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -398,6 +400,61 @@ const styles = `
   .plan-btn-ghost:hover { background: rgba(255,255,255,0.05); }
   .pricing-note { text-align: center; font-size: 13px; color: var(--muted2); margin-top: 20px; }
 
+  .school-login {
+    padding: 100px 0;
+  }
+  .school-login-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 36px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  .school-login-grid {
+    display: grid;
+    gap: 20px;
+    margin-top: 24px;
+  }
+  .school-login-field {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 16px 18px;
+  }
+  .school-login-field input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 15px;
+    outline: none;
+  }
+  .school-login-field span {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .school-login-help {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .school-login-help a {
+    color: var(--green-light);
+    text-decoration: none;
+  }
+  .school-login-footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 18px;
+  }
+
   /* WHO */
   .who { padding: 80px 0; }
   .who-tags { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
@@ -673,6 +730,20 @@ const schoolTypes = [
 
 // ─── COMPONENT ───────────────────────────────────────────────
 export default function LandingPage() {
+  const [slug, setSlug] = useState("");
+  const [slugError, setSlugError] = useState("");
+  const router = useRouter();
+
+  function handleSchoolLogin(e: FormEvent) {
+    e.preventDefault();
+    const clean = slug.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!clean) {
+      setSlugError("Please enter your school name or link");
+      return;
+    }
+    router.push(`/${clean}/login`);
+  }
+
   return (
     <>
       <style>{styles}</style>
@@ -691,6 +762,7 @@ export default function LandingPage() {
               <a href="#how" className="nav-link hide-mobile">How it works</a>
               <a href="#features" className="nav-link hide-mobile">Features</a>
               <a href="#pricing" className="nav-link hide-mobile">Pricing</a>
+              <a href="#school-login" className="nav-link hide-mobile">School Login</a>
               <a href="mailto:attendyofficial@gmail.com?subject=Book a Demo" className="nav-link hide-mobile">Contact</a>
               <a
                 href="mailto:attendyofficial@gmail.com?subject=I want to get started with Attendy"
@@ -730,10 +802,10 @@ export default function LandingPage() {
               Start for free <ArrowIcon />
             </a>
             <a
-              href="mailto:attendyofficial@gmail.com?subject=Book a Demo"
+              href="#school-login"
               className="btn-ghost"
             >
-              Book a demo
+              School login
             </a>
           </div>
 
@@ -889,6 +961,42 @@ export default function LandingPage() {
             </div>
             <p className="pricing-note">
               All plans include onboarding &amp; setup support. SMS charges billed separately via Termii.
+            </p>
+          </div>
+        </section>
+
+        {/* SCHOOL LOGIN */}
+        <section id="school-login" className="school-login section">
+          <div className="container school-login-card">
+            <span className="section-tag">Already a customer?</span>
+            <h2 className="section-title">Log in to your school</h2>
+            <p className="section-sub">
+              Enter your school's unique link to access your dashboard. Your link was given to you when you signed up.
+            </p>
+            <form onSubmit={handleSchoolLogin} className="school-login-grid">
+              <label className="school-login-field">
+                <span>attendy.ng/</span>
+                <input
+                  type="text"
+                  value={slug}
+                  onChange={(e) => {
+                    setSlug(e.target.value);
+                    setSlugError("");
+                  }}
+                  placeholder="greenfield-academy"
+                />
+              </label>
+              {slugError && <p style={{ color: '#f87171', fontSize: '0.875rem' }}>{slugError}</p>}
+              <p className="school-login-help">
+                Not sure of your link? Contact your school admin or email{' '}
+                <a href="mailto:attendyofficial@gmail.com">attendyofficial@gmail.com</a>
+              </p>
+              <button type="submit" className="btn-primary" style={{ width: '100%' }}>
+                Go to my school
+              </button>
+            </form>
+            <p className="school-login-footer">
+              Each school has a unique link e.g. <span style={{ color: '#d1d5db' }}>attendy.ng/kings-college-lagos</span>
             </p>
           </div>
         </section>
