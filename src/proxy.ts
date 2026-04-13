@@ -27,7 +27,7 @@ export async function proxy(request: NextRequest) {
   const slug = slugMatch?.[1]
 
   // Skip head-admin, static, API routes — they handle their own auth
-  const skipPrefixes = ['/head-admin', '/_next', '/favicon', '/api']
+  const skipPrefixes = ['/head-admin', '/_next', '/favicon', '/api', '/setup']
   if (skipPrefixes.some(p => pathname.startsWith(p))) {
     return proxyResponse
   }
