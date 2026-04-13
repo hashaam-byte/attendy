@@ -8,7 +8,29 @@ const supabaseAdmin = createServiceClient(
 )
 
 export async function POST(req: NextRequest) {
+  const { createClient } = await import('@/lib/supabase/server')
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
+  }
+
   const { email, full_name, phone, role, school_id } = await req.json()
+
+  const { data: callerProfile } = await supabase
+    .from('user_profiles')
+    .select('school_id, role')
+    .eq('user_id', user.id)
+    .single()
+
+  if (
+    !callerProfile ||
+    callerProfile.role !== 'admin' ||
+    callerProfile.school_id !== school_id
+  ) {
+    return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
+  }
 
   // Create auth user with a temp password — they'll get a reset email
   const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({

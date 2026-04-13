@@ -66,6 +66,17 @@ export async function proxy(request: NextRequest) {
       return response
     }
 
+    const { data: schoolRecord } = await supabase
+      .from('schools')
+      .select('id')
+      .eq('slug', slug)
+      .single()
+
+    if (schoolRecord && profile?.school_id !== schoolRecord.id) {
+      await supabase.auth.signOut()
+      return NextResponse.redirect(new URL(`/${slug}/login`, request.url))
+    }
+
     const role = profile?.role
 
     const roleHome: Record<string, string> = {

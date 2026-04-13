@@ -10,16 +10,19 @@ export default async function QRPage({
   const { school_slug, student_id } = await params
   const supabase = await createClient()
 
+  const { data: school } = await supabase
+    .from('schools')
+    .select('id, name')
+    .eq('slug', school_slug)
+    .single()
+
+  if (!school) notFound()
+
   const { data: student } = await supabase
     .from('students')
     .select('*')
     .eq('id', student_id)
-    .single()
-
-  const { data: school } = await supabase
-    .from('schools')
-    .select('name')
-    .eq('slug', school_slug)
+    .eq('school_id', school.id)
     .single()
 
   if (!student) notFound()
