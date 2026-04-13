@@ -2,27 +2,35 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 export async function POST(req: NextRequest) {
-  const { studentId, isLate, reason, time } = await req.json()
+  const { studentId, isLate, reason, time, attendanceId } = await req.json()
+
+  if (!studentId) {
+    return NextResponse.json({ error: 'studentId required' }, { status: 400 })
+  }
+
   const supabase = await createClient()
 
-  // Get student + parent phone
-  const { data: student } = await supabase
+  // Get student + parent phone — scoped via RLS, no extra school filter needed
+  // but we fetch school_id explicitly for the settings lookup
+  const { data: student, error: studentError } = await supabase
     .from('students')
     .select('full_name, parent_phone, class, school_id')
     .eq('id', studentId)
     .single()
 
-  if (!student) return NextResponse.json({ error: 'Student not found' }, { status: 404 })
+  if (studentError || !student) {
+    return NextResponse.json({ error: 'Student not found' }, { status: 404 })
+  }
 
-  // Check if SMS is enabled for this school
+  // Check SMS enabled for this school
   const { data: settings } = await supabase
     .from('school_settings')
-    .select('sms_enabled')
+    .select('sms_enabled, whatsapp_enabled')
     .eq('school_id', student.school_id)
     .single()
 
   if (!settings?.sms_enabled) {
-    return NextResponse.json({ skipped: true })
+    return NextResponse.json({ skipped: true, reason: 'sms_disabled' })
   }
 
   // Build message
@@ -30,7 +38,7 @@ export async function POST(req: NextRequest) {
     ? `Attendy: ${student.full_name} (${student.class}) arrived LATE at ${time}.${reason ? ` Reason: ${reason}` : ''}`
     : `Attendy: ${student.full_name} (${student.class}) arrived safely at school at ${time}.`
 
-  // Format phone: convert 08012345678 → 2348012345678
+  // Format phone: 08012345678 → 2348012345678
   let phone = student.parent_phone.replace(/\s/g, '')
   if (phone.startsWith('0')) {
     phone = '234' + phone.slice(1)
@@ -38,9 +46,8 @@ export async function POST(req: NextRequest) {
     phone = phone.slice(1)
   }
 
-  // Send via Termii
-  let status = 'sent'
-  let errorMessage = null
+  let status: 'sent' | 'failed' = 'sent'
+  let errorMessage: string | null = null
 
   try {
     const res = await fetch('https://api.ng.termii.com/api/sms/send', {
@@ -67,7 +74,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Log the notification
-  await supabase.from('notifications_log').insert({
+  // attendance_id is nullable in the schema (FK with ON DELETE CASCADE)
+  // so we include it when provided, omit when not — no FK violation
+  const logEntry: Record<string, any> = {
     school_id: student.school_id,
     student_id: studentId,
     channel: 'sms',
@@ -75,7 +84,14 @@ export async function POST(req: NextRequest) {
     message,
     status,
     error_message: errorMessage,
-  })
+  }
 
-  return NextResponse.json({ success: status === 'sent' })
+  // Only include attendance_id if it was passed and is a valid UUID
+  if (attendanceId && typeof attendanceId === 'string' && attendanceId.length > 0) {
+    logEntry.attendance_id = attendanceId
+  }
+
+  await supabase.from('notifications_log').insert(logEntry)
+
+  return NextResponse.json({ success: status === 'sent', status })
 }

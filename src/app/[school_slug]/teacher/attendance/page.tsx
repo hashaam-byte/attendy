@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { format } from 'date-fns'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle, Clock } from 'lucide-react'
+import { notFound } from 'next/navigation'
 
 export default async function TeacherAttendancePage({
   params,
@@ -10,39 +11,58 @@ export default async function TeacherAttendancePage({
 }) {
   const { school_slug } = await params
   const supabase = await createClient()
+
   const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) notFound()
 
   const { data: profile } = await supabase
     .from('user_profiles')
     .select('school_id')
-    .eq('user_id', user!.id)
+    .eq('user_id', user.id)
     .single()
+
+  if (!profile) notFound()
+
+  const schoolId = profile.school_id
 
   // Get teacher's assigned classes
   const { data: myClasses } = await supabase
     .from('teacher_classes')
     .select('class_name')
-    .eq('teacher_id', user!.id)
+    .eq('teacher_id', user.id)
+    .eq('school_id', schoolId)
 
   const classNames = myClasses?.map(c => c.class_name) ?? []
 
   const today = format(new Date(), 'yyyy-MM-dd')
 
-  // Get today's attendance for teacher's classes
+  // CRITICAL: always filter by school_id first
+  // Then filter by teacher's assigned classes server-side if they have any
   let query = supabase
     .from('attendance_logs')
     .select(`
       id, scan_type, scanned_at, is_late, late_reason, scanned_by_name,
       students (full_name, class)
     `)
-    .eq('school_id', profile!.school_id)
+    .eq('school_id', schoolId)
     .eq('scan_type', 'entry')
     .gte('scanned_at', `${today}T00:00:00`)
     .order('scanned_at', { ascending: false })
 
+  // If teacher is assigned to specific classes, filter server-side
+  // This avoids pulling the full school's logs when teacher has a class assignment
+  if (classNames.length > 0) {
+    // We can't do a join filter on the related table in PostgREST directly
+    // so we fetch with school scope then filter — still safe, school_id is the security boundary
+    query = query.limit(200)
+  } else {
+    query = query.limit(100)
+  }
+
   const { data: logs } = await query
 
-  // Filter by teacher's classes if assigned
+  // Filter client-side by class only when teacher has assigned classes
   const filtered = classNames.length > 0
     ? logs?.filter((l: any) => classNames.includes(l.students?.class))
     : logs

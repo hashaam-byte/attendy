@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import StudentList from './StudentList'
+import { notFound } from 'next/navigation'
 
 export default async function StudentsPage({
   params,
@@ -11,9 +12,21 @@ export default async function StudentsPage({
   const { school_slug } = await params
   const supabase = await createClient()
 
+  // Verify school exists and get its ID
+  const { data: school } = await supabase
+    .from('schools')
+    .select('id, name')
+    .eq('slug', school_slug)
+    .single()
+
+  if (!school) notFound()
+
+  // CRITICAL: filter by school_id — never return students from other schools
   const { data: students } = await supabase
     .from('students')
     .select('*')
+    .eq('school_id', school.id)
+    .eq('is_active', true)
     .order('class', { ascending: true })
     .order('full_name', { ascending: true })
 

@@ -21,6 +21,13 @@ interface ScanResult {
   message?: string
 }
 
+interface ResolvedUser {
+  userId: string
+  schoolId: string
+  fullName: string
+  role: string
+}
+
 export default function GatemanScanPage() {
   const { school_slug } = useParams<{ school_slug: string }>()
   const supabase = createClient()
@@ -28,13 +35,14 @@ export default function GatemanScanPage() {
 
   const [processing, setProcessing] = useState(false)
   const [lastResult, setLastResult] = useState<ScanResult | null>(null)
+  const [resolvedUser, setResolvedUser] = useState<ResolvedUser | null>(null)
 
-  async function handleScan(qrCode: string) {
-    if (processing) return
-    setProcessing(true)
+  // Resolve user once and cache
+  async function getResolvedUser(): Promise<ResolvedUser | null> {
+    if (resolvedUser) return resolvedUser
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setProcessing(false); return }
+    if (!user) return null
 
     const { data: profile } = await supabase
       .from('user_profiles')
@@ -42,13 +50,35 @@ export default function GatemanScanPage() {
       .eq('user_id', user.id)
       .single()
 
-    if (!profile) { setProcessing(false); return }
+    if (!profile) return null
 
+    const resolved: ResolvedUser = {
+      userId: user.id,
+      schoolId: profile.school_id,
+      fullName: profile.full_name,
+      role: profile.role,
+    }
+    setResolvedUser(resolved)
+    return resolved
+  }
+
+  async function handleScan(qrCode: string) {
+    if (processing) return
+    setProcessing(true)
+
+    const user = await getResolvedUser()
+    if (!user) {
+      toast.error('Session expired. Please log in again.')
+      setProcessing(false)
+      return
+    }
+
+    // CRITICAL: enforce school boundary on student lookup
     const { data: student } = await supabase
       .from('students')
       .select('id, full_name, class')
       .eq('qr_code', qrCode)
-      .eq('school_id', profile.school_id)
+      .eq('school_id', user.schoolId)
       .single()
 
     if (!student) {
@@ -62,34 +92,46 @@ export default function GatemanScanPage() {
       .from('attendance_logs')
       .select('id, scanned_at')
       .eq('student_id', student.id)
+      .eq('school_id', user.schoolId)
       .eq('scan_type', 'entry')
       .gte('scanned_at', `${today}T00:00:00`)
-      .single()
+      .maybeSingle()
 
     const time = new Date().toLocaleTimeString('en-NG', {
       hour: '2-digit', minute: '2-digit'
     })
 
     if (existing) {
+      const existingTime = new Date(existing.scanned_at).toLocaleTimeString('en-NG', {
+        hour: '2-digit', minute: '2-digit'
+      })
       setLastResult({
         status: 'duplicate',
         studentName: student.full_name,
         class: student.class,
         time,
-        message: `Already scanned today`,
+        message: `Already scanned today at ${existingTime}`,
       })
       setProcessing(false)
       return
     }
 
-    // Check late
-    const { data: settings } = await supabase
-      .from('school_settings')
-      .select('late_cutoff')
-      .eq('school_id', profile.school_id)
-      .single()
+    // Late check
+    const [overrideRes, settingsRes] = await Promise.all([
+      supabase
+        .from('late_cutoff_overrides')
+        .select('cutoff_time')
+        .eq('school_id', user.schoolId)
+        .eq('override_date', today)
+        .maybeSingle(),
+      supabase
+        .from('school_settings')
+        .select('late_cutoff')
+        .eq('school_id', user.schoolId)
+        .single(),
+    ])
 
-    const cutoffTime = settings?.late_cutoff ?? '08:00'
+    const cutoffTime = overrideRes.data?.cutoff_time ?? settingsRes.data?.late_cutoff ?? '08:00'
     const now = new Date()
     const [ch, cm] = cutoffTime.split(':').map(Number)
     const cutoff = new Date()
@@ -97,13 +139,13 @@ export default function GatemanScanPage() {
     const isLate = now > cutoff
 
     const { error } = await supabase.from('attendance_logs').insert({
-      school_id: profile.school_id,
+      school_id: user.schoolId,
       student_id: student.id,
       scan_type: 'entry',
       is_late: isLate,
-      scanned_by: user.id,
+      scanned_by: user.userId,
       scanned_by_role: 'gateman',
-      scanned_by_name: profile.full_name,
+      scanned_by_name: user.fullName,
     })
 
     if (error) {

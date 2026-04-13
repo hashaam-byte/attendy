@@ -7,7 +7,6 @@ import { CheckCircle, Clock, AlertCircle, LogOut } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 
-// QR scanner uses browser APIs, must be client-only
 const QRScanner = dynamic(() => import('@/components/scanner/QRScanner'), {
   ssr: false,
   loading: () => (
@@ -23,24 +22,32 @@ interface ScanResult {
   message?: string
 }
 
+interface ResolvedUser {
+  userId: string
+  schoolId: string
+  fullName: string
+  role: string
+}
+
 export default function TeacherScanPage() {
   const { school_slug } = useParams<{ school_slug: string }>()
   const supabase = createClient()
   const router = useRouter()
 
-  const [scanning, setScanning] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [lastResult, setLastResult] = useState<ScanResult | null>(null)
   const [lateReason, setLateReason] = useState('')
   const [showLateReason, setShowLateReason] = useState(false)
   const [pendingScan, setPendingScan] = useState<string | null>(null)
+  const [pendingStudent, setPendingStudent] = useState<any | null>(null)
+  const [resolvedUser, setResolvedUser] = useState<ResolvedUser | null>(null)
 
-  async function handleScan(qrCode: string) {
-    if (processing) return
-    setProcessing(true)
+  // Resolve user once and cache — avoids repeated getUser() calls
+  async function getResolvedUser(): Promise<ResolvedUser | null> {
+    if (resolvedUser) return resolvedUser
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) return null
 
     const { data: profile } = await supabase
       .from('user_profiles')
@@ -48,34 +55,52 @@ export default function TeacherScanPage() {
       .eq('user_id', user.id)
       .single()
 
-    if (!profile) {
+    if (!profile) return null
+
+    const resolved: ResolvedUser = {
+      userId: user.id,
+      schoolId: profile.school_id,
+      fullName: profile.full_name,
+      role: profile.role,
+    }
+    setResolvedUser(resolved)
+    return resolved
+  }
+
+  async function handleScan(qrCode: string) {
+    if (processing) return
+    setProcessing(true)
+
+    const user = await getResolvedUser()
+    if (!user) {
+      toast.error('Session expired. Please log in again.')
       setProcessing(false)
       return
     }
 
-    // Find student by QR code
     const { data: student } = await supabase
       .from('students')
       .select('id, full_name, class, school_id')
       .eq('qr_code', qrCode)
-      .eq('school_id', profile.school_id)
+      .eq('school_id', user.schoolId) // CRITICAL: only match students from this school
       .single()
 
     if (!student) {
-      toast.error('Student not found for this QR code')
+      toast.error('Student not found')
       setProcessing(false)
       return
     }
 
-    // Check for duplicate entry scan today
+    // Check duplicate entry scan today
     const today = new Date().toISOString().split('T')[0]
     const { data: existing } = await supabase
       .from('attendance_logs')
       .select('id, scanned_at')
       .eq('student_id', student.id)
+      .eq('school_id', user.schoolId)
       .eq('scan_type', 'entry')
       .gte('scanned_at', `${today}T00:00:00`)
-      .single()
+      .maybeSingle()
 
     if (existing) {
       const time = new Date(existing.scanned_at).toLocaleTimeString('en-NG', {
@@ -86,60 +111,63 @@ export default function TeacherScanPage() {
         studentName: student.full_name,
         class: student.class,
         time,
-        message: `Already scanned today at ${time}`
+        message: `Already scanned today at ${time}`,
       })
       setProcessing(false)
       return
     }
 
-    // Get late cutoff — check override first, then default setting
+    // Check late cutoff — override first, then school default
     const todayDate = new Date().toISOString().split('T')[0]
-    const { data: override } = await supabase
-      .from('late_cutoff_overrides')
-      .select('cutoff_time')
-      .eq('school_id', profile.school_id)
-      .eq('override_date', todayDate)
-      .single()
+    const [overrideRes, settingsRes] = await Promise.all([
+      supabase
+        .from('late_cutoff_overrides')
+        .select('cutoff_time')
+        .eq('school_id', user.schoolId)
+        .eq('override_date', todayDate)
+        .maybeSingle(),
+      supabase
+        .from('school_settings')
+        .select('late_cutoff')
+        .eq('school_id', user.schoolId)
+        .single(),
+    ])
 
-    const { data: settings } = await supabase
-      .from('school_settings')
-      .select('late_cutoff')
-      .eq('school_id', profile.school_id)
-      .single()
-
-    const cutoffTime = override?.cutoff_time ?? settings?.late_cutoff ?? '08:00'
+    const cutoffTime = overrideRes.data?.cutoff_time ?? settingsRes.data?.late_cutoff ?? '08:00'
     const now = new Date()
     const [ch, cm] = cutoffTime.split(':').map(Number)
     const cutoff = new Date()
     cutoff.setHours(ch, cm, 0, 0)
     const isLate = now > cutoff
 
-    // If late, pause for reason input
     if (isLate) {
+      // Pause for reason input — store student + user context
       setPendingScan(qrCode)
+      setPendingStudent(student)
       setShowLateReason(true)
       setProcessing(false)
       return
     }
 
-    await recordAttendance(student, profile, false, '')
+    await recordAttendance(student, user, false, '')
   }
 
+  // Single place where attendance is written — user context passed in, no second getUser()
   async function recordAttendance(
     student: any,
-    profile: any,
+    user: ResolvedUser,
     isLate: boolean,
     reason: string
   ) {
     const { error } = await supabase.from('attendance_logs').insert({
-      school_id: profile.school_id,
+      school_id: user.schoolId,
       student_id: student.id,
       scan_type: 'entry',
       is_late: isLate,
       late_reason: reason || null,
-      scanned_by: (await supabase.auth.getUser()).data.user?.id,
-      scanned_by_role: profile.role,
-      scanned_by_name: profile.full_name,
+      scanned_by: user.userId,
+      scanned_by_role: user.role,
+      scanned_by_name: user.fullName,
     })
 
     const time = new Date().toLocaleTimeString('en-NG', {
@@ -162,46 +190,33 @@ export default function TeacherScanPage() {
         time,
       })
 
-      // Trigger SMS via API route (Phase 3)
+      // Fire-and-forget SMS — non-blocking
       fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentId: student.id,
-          isLate,
-          reason,
-          time,
-        }),
-      }).catch(() => {}) // Fire and forget
+        body: JSON.stringify({ studentId: student.id, isLate, reason, time }),
+      }).catch(() => {})
     }
 
     setProcessing(false)
     setShowLateReason(false)
     setPendingScan(null)
+    setPendingStudent(null)
     setLateReason('')
   }
 
   async function submitLateReason() {
-    if (!pendingScan) return
+    if (!pendingScan || !pendingStudent) return
     setProcessing(true)
 
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('school_id, full_name, role')
-      .eq('user_id', user!.id)
-      .single()
-
-    const { data: student } = await supabase
-      .from('students')
-      .select('id, full_name, class, school_id')
-      .eq('qr_code', pendingScan)
-      .eq('school_id', profile!.school_id)
-      .single()
-
-    if (student && profile) {
-      await recordAttendance(student, profile, true, lateReason)
+    const user = await getResolvedUser()
+    if (!user) {
+      toast.error('Session expired. Please log in again.')
+      setProcessing(false)
+      return
     }
+
+    await recordAttendance(pendingStudent, user, true, lateReason)
   }
 
   const resultStyles = {
@@ -214,7 +229,6 @@ export default function TeacherScanPage() {
   return (
     <div className="min-h-screen bg-gray-950 p-4">
       <div className="max-w-sm mx-auto">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-white text-xl font-bold">Scan QR Code</h1>
@@ -233,9 +247,8 @@ export default function TeacherScanPage() {
           </button>
         </div>
 
-        {/* Late reason modal */}
         {showLateReason && (
-          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+          <div style={{ minHeight: '400px', background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, zIndex: 50, padding: '1rem' }}>
             <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-sm border border-yellow-500/30">
               <h2 className="text-white font-bold mb-1">Student is Late</h2>
               <p className="text-gray-400 text-sm mb-4">
@@ -253,6 +266,7 @@ export default function TeacherScanPage() {
                   onClick={() => {
                     setShowLateReason(false)
                     setPendingScan(null)
+                    setPendingStudent(null)
                     setProcessing(false)
                   }}
                   className="flex-1 bg-gray-800 text-white py-2 rounded-lg text-sm"
@@ -271,12 +285,11 @@ export default function TeacherScanPage() {
           </div>
         )}
 
-        {/* Scanner */}
         <div className="mb-6">
           <QRScanner
             onScan={handleScan}
             onError={err => toast.error('Camera error: ' + err)}
-            active={scanning && !showLateReason}
+            active={!processing && !showLateReason}
           />
           {processing && (
             <p className="text-center text-gray-400 text-sm mt-3 animate-pulse">
@@ -285,7 +298,6 @@ export default function TeacherScanPage() {
           )}
         </div>
 
-        {/* Last scan result */}
         {lastResult && (() => {
           const style = resultStyles[lastResult.status]
           const Icon = style.icon

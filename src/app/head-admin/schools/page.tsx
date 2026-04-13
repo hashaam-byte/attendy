@@ -1,10 +1,27 @@
-export default function Page() {
+import { requireHeadAdmin } from '@/lib/head-admin/auth'
+import HeadAdminNav from '../HeadAdminNav'
+import SchoolsClient from './ShcoolsClientt'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+export default async function SchoolsPage() {
+  const admin = await requireHeadAdmin()
+
+  const { data: schools } = await supabaseAdmin
+    .from('schools')
+    .select('*')
+    .order('created_at', { ascending: false })
+
   return (
-    <div className="flex items-center justify-center h-screen">
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold">Coming Soon</h1>
-        <p className="text-gray-500">This page is under development.</p>
-      </div>
+    <div className="flex">
+      <HeadAdminNav adminName={admin.email} />
+      <main className="flex-1 ml-0 md:ml-60 p-8">
+        <SchoolsClient schools={schools ?? []} />
+      </main>
     </div>
-  );
+  )
 }

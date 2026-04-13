@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { format } from 'date-fns'
 import { Users, UserCheck, UserX, Clock } from 'lucide-react'
-
 import { notFound } from 'next/navigation'
 
 export default async function DashboardPage({
@@ -24,15 +23,23 @@ export default async function DashboardPage({
   const schoolId = school.id
 
   const [studentsRes, presentRes, lateRes] = await Promise.all([
-    supabase.from('students').select('id', { count: 'exact' }).eq('is_active', true).eq('school_id', schoolId),
-    supabase.from('attendance_logs')
-      .select('id', { count: 'exact' })
+    supabase
+      .from('students')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_active', true)
+      .eq('school_id', schoolId),
+
+    supabase
+      .from('attendance_logs')
+      .select('id', { count: 'exact', head: true })
       .eq('scan_type', 'entry')
       .eq('school_id', schoolId)
       .gte('scanned_at', `${today}T00:00:00`)
       .lte('scanned_at', `${today}T23:59:59`),
-    supabase.from('attendance_logs')
-      .select('id', { count: 'exact' })
+
+    supabase
+      .from('attendance_logs')
+      .select('id', { count: 'exact', head: true })
       .eq('scan_type', 'entry')
       .eq('is_late', true)
       .eq('school_id', schoolId)
@@ -48,11 +55,11 @@ export default async function DashboardPage({
   const stats = [
     { label: 'Total Students', value: totalStudents, icon: Users, color: 'blue' },
     { label: 'Present Today', value: presentToday, icon: UserCheck, color: 'green' },
-    { label: 'Absent Today', value: absentToday, icon: UserX, color: 'red' },
+    { label: 'Absent Today', value: absentToday < 0 ? 0 : absentToday, icon: UserX, color: 'red' },
     { label: 'Late Today', value: lateToday, icon: Clock, color: 'yellow' },
   ]
 
-  // Recent attendance logs
+  // CRITICAL: filter recent logs by school_id
   const { data: recentLogs } = await supabase
     .from('attendance_logs')
     .select(`
@@ -78,7 +85,6 @@ export default async function DashboardPage({
         <p className="text-gray-400 text-sm">{format(new Date(), 'EEEE, MMMM d yyyy')}</p>
       </div>
 
-      {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {stats.map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="bg-gray-900 rounded-xl p-4 border border-gray-800">
@@ -91,7 +97,6 @@ export default async function DashboardPage({
         ))}
       </div>
 
-      {/* Recent activity */}
       <div className="bg-gray-900 rounded-xl border border-gray-800">
         <div className="p-4 border-b border-gray-800">
           <h2 className="text-white font-semibold">Today's Activity</h2>

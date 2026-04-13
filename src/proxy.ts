@@ -1,4 +1,3 @@
-// src/proxy.ts
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
@@ -27,29 +26,45 @@ export async function proxy(request: NextRequest) {
   const slugMatch = pathname.match(/^\/([^\/]+)(?:\/|$)/)
   const slug = slugMatch?.[1]
 
-  // Skip head-admin, static, and API routes
+  // Skip head-admin, static, API routes — they handle their own auth
   const skipPrefixes = ['/head-admin', '/_next', '/favicon', '/api']
   if (skipPrefixes.some(p => pathname.startsWith(p))) {
     return proxyResponse
   }
 
-  // Skip if no slug detected or it's a root path
+  // Skip root path and non-school paths
   if (!slug || slug === '') return proxyResponse
 
+  // Skip known non-school top-level routes
+  const nonSchoolSlugs = ['_next', 'favicon', 'api', 'head-admin']
+  if (nonSchoolSlugs.includes(slug)) return proxyResponse
+
   const isLoginPage = pathname.endsWith('/login')
+  const isCallbackPage = pathname.includes('/auth/callback')
+
+  // Allow OAuth callback through without auth check
+  if (isCallbackPage) return proxyResponse
 
   // Not logged in → redirect to school login
   if (!user && !isLoginPage) {
     return NextResponse.redirect(new URL(`/${slug}/login`, request.url))
   }
 
-  // Logged in
   if (user) {
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('role, is_active')
+      .select('role, is_active, school_id')
       .eq('user_id', user.id)
       .single()
+
+    // Deactivated account — sign out and redirect
+    if (profile && !profile.is_active) {
+      const response = NextResponse.redirect(new URL(`/${slug}/login`, request.url))
+      // Clear the session cookies
+      response.cookies.delete('sb-access-token')
+      response.cookies.delete('sb-refresh-token')
+      return response
+    }
 
     const role = profile?.role
 
@@ -60,29 +75,23 @@ export async function proxy(request: NextRequest) {
       parent:  `/${slug}/parent/my-child`,
     }
 
-    // If on login page and already authed, send to role home
+    // Already logged in, on login page → send to role home
     if (isLoginPage && role) {
       return NextResponse.redirect(new URL(roleHome[role], request.url))
     }
 
-    // Block access to wrong role section
+    // Role enforcement — block access to wrong role section
     if (role && !isLoginPage) {
-      const allowedPrefix = `/${slug}/${role}/`
-      const isAdminPath = pathname.startsWith(`/${slug}/admin/`)
-      const isTeacherPath = pathname.startsWith(`/${slug}/teacher/`)
-      const isGatemanPath = pathname.startsWith(`/${slug}/gateman/`)
-      const isParentPath = pathname.startsWith(`/${slug}/parent/`)
+      const rolePrefixes = ['admin', 'teacher', 'gateman', 'parent']
+      const matchedPrefix = rolePrefixes.find(r => pathname.startsWith(`/${slug}/${r}/`))
 
-      const isRolePath = isAdminPath || isTeacherPath || isGatemanPath || isParentPath
-
-      if (isRolePath && !pathname.startsWith(`/${slug}/${role}/`)) {
+      if (matchedPrefix && matchedPrefix !== role) {
         return NextResponse.redirect(new URL(roleHome[role], request.url))
       }
     }
 
-    // Deactivated account
-    if (profile && !profile.is_active) {
-      await supabase.auth.signOut()
+    // No profile found for this auth user — orphaned account, redirect to login
+    if (!profile && !isLoginPage) {
       return NextResponse.redirect(new URL(`/${slug}/login`, request.url))
     }
   }
@@ -91,5 +100,9 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // Exclude: static files, images, favicon, API routes, auth callbacks
+  // These handle their own auth — proxy must never intercept them
+  matcher: [
+    '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|api/|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|woff|woff2|ttf)).*)',
+  ],
 }
