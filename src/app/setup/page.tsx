@@ -36,13 +36,10 @@ export default function SetupPage() {
 
     setSubmitting(true)
 
-    const setupToken = process.env.NEXT_PUBLIC_SETUP_SECRET_TOKEN ?? ''
-
     const res = await fetch('/api/setup/create', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-setup-token': setupToken,
       },
       body: JSON.stringify({
         full_name: form.full_name,

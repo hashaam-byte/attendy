@@ -36,7 +36,7 @@ export async function proxy(request: NextRequest) {
   if (!slug || slug === '') return proxyResponse
 
   // Skip known non-school top-level routes
-  const nonSchoolSlugs = ['_next', 'favicon', 'api', 'head-admin']
+  const nonSchoolSlugs = ['_next', 'favicon', 'api', 'head-admin', 'setup']
   if (nonSchoolSlugs.includes(slug)) return proxyResponse
 
   const isLoginPage = pathname.endsWith('/login')

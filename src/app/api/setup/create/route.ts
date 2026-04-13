@@ -7,12 +7,6 @@ const supabaseAdmin = createClient(
 )
 
 export async function POST(req: NextRequest) {
-  // Check the secret token in headers — extra layer of protection
-  const token = req.headers.get('x-setup-token')
-  if (token !== process.env.SETUP_SECRET_TOKEN) {
-    return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
-  }
-
   // CRITICAL: Only allow creation if NO head admin exists yet
   const { count } = await supabaseAdmin
     .from('head_admins')
