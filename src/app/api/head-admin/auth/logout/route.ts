@@ -4,5 +4,6 @@ import { cookies } from 'next/headers'
 export async function POST() {
   const cookieStore = await cookies()
   cookieStore.delete({ name: 'head_admin_token', path: '/' })
+  cookieStore.delete({ name: 'head_admin_token', path: '/head-admin' })
   return NextResponse.json({ success: true })
 }
