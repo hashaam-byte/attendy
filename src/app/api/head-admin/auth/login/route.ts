@@ -59,16 +59,16 @@ export async function POST(req: NextRequest) {
     .setExpirationTime('8h')
     .sign(JWT_SECRET)
 
-  // Set httpOnly cookie for all app routes and clear any legacy /head-admin cookie
+  // Set httpOnly cookie
   const cookieStore = await cookies()
-cookieStore.set('head_admin_token', token, {
+  cookieStore.set('head_admin_token', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 60 * 60 * 8,
+    maxAge: 60 * 60 * 8, // 8 hours
     path: '/',
-})
-cookieStore.delete({ name: 'head_admin_token', path: '/head-admin' })
+  })
+
   return NextResponse.json({
     success: true,
     admin: { email: admin.email, name: admin.full_name },
