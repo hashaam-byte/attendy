@@ -3,6 +3,6 @@ import { cookies } from 'next/headers'
 
 export async function POST() {
   const cookieStore = await cookies()
-  cookieStore.delete('head_admin_token')
+  cookieStore.delete({ name: 'head_admin_token', path: '/' })
   return NextResponse.json({ success: true })
 }
