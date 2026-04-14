@@ -68,7 +68,7 @@ export default function VerifyOtpPage() {
 
   // Stage 2: User enters 6-digit OTP
   async function handleOtpSubmit() {
-    if (otp.trim().length < 6) { setError('Please enter the 6-digit code'); return }
+    if (otp.trim().length < 8) { setError('Please enter the 8-digit code'); return }
     setError('')
     setLoading(true)
 
@@ -171,7 +171,7 @@ export default function VerifyOtpPage() {
   }
 
   function handleOtpChange(val: string) {
-    const digits = val.replace(/\D/g, '').slice(0, 6)
+    const digits = val.replace(/\D/g, '').slice(0, 8)
     setOtp(digits)
     setError('')
   }
@@ -415,7 +415,7 @@ export default function VerifyOtpPage() {
                 <div className="vp-title">Enter your email</div>
                 <div className="vp-subtitle">
                   Your school admin has added you to <strong>{schoolName}</strong>.
-                  Enter your work email to receive a 6-digit verification code.
+                  Enter your work email to receive an 8-digit verification code.
                 </div>
                 <div className="vp-info">
                   <strong>Important:</strong> You must have been added by your school admin before using this page.
@@ -462,7 +462,7 @@ export default function VerifyOtpPage() {
                 <div className="vp-icon-wrap"><ShieldCheck size={22} color="#4ade80" /></div>
                 <div className="vp-title">Check your inbox</div>
                 <div className="vp-subtitle">
-                  We sent a <strong>6-digit code</strong> to <strong>{email}</strong>.
+                  We sent a <strong>8-digit code</strong> to <strong>{email}</strong>.
                   Enter it below — it expires in 1 hour.
                 </div>
                 <div className="vp-info">
@@ -478,24 +478,24 @@ export default function VerifyOtpPage() {
                   </div>
                 )}
                 <div className="vp-field">
-                  <label className="vp-label">6-digit code</label>
+                  <label className="vp-label">8-digit code</label>
                   <input
                     className="vp-otp-input"
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    maxLength={6}
-                    placeholder="——————"
+                    maxLength={8}
+                    placeholder="———————"
                     value={otp}
                     onChange={e => handleOtpChange(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && otp.length === 6 && handleOtpSubmit()}
+                    onKeyDown={e => e.key === 'Enter' && otp.length === 8 && handleOtpSubmit()}
                     autoFocus
                   />
                 </div>
                 <button
                   className="vp-btn"
                   onClick={handleOtpSubmit}
-                  disabled={loading || otp.length < 6}
+                  disabled={loading || otp.length < 8}
                 >
                   {loading
                     ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
