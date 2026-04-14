@@ -4,14 +4,24 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { Eye, EyeOff, Lock, Mail, ShieldCheck } from 'lucide-react'
+import { Eye, EyeOff, Lock, Mail, ShieldCheck, AlertCircle } from 'lucide-react'
 
 interface LoginClientProps {
   schoolSlug: string
   schoolName: string
+  urlError?: string
 }
 
-export default function LoginClient({ schoolSlug, schoolName }: LoginClientProps) {
+const URL_ERROR_MESSAGES: Record<string, string> = {
+  oauth_error:   'Google sign-in failed. Please try again.',
+  no_code:       'Authentication callback missing code. Please try again.',
+  exchange_failed: 'Session exchange failed. Please try again.',
+  no_user:       'No user found after sign-in. Please try again.',
+  no_profile:    'Your account has no profile set up. Contact your school admin.',
+  deactivated:   'Your account has been deactivated. Contact your school admin.',
+}
+
+export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginClientProps) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -21,38 +31,69 @@ export default function LoginClient({ schoolSlug, schoolName }: LoginClientProps
   const [showPassword, setShowPassword] = useState(false)
 
   async function handleLogin() {
+    if (!email || !password) return
     setLoading(true)
 
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    // Sign in and use the returned user directly — avoids a second getUser() call
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
 
-    if (authError) {
+    if (authError || !authData.user) {
       toast.error('Invalid email or password.')
       setLoading(false)
       return
     }
 
-    const { data: profile } = await supabase
+    // Fetch role using the confirmed user id
+    const { data: profile, error: profileError } = await supabase
       .from('user_profiles')
-      .select('role')
-      .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
+      .select('role, is_active')
+      .eq('user_id', authData.user.id)
       .single()
 
-    const roleRoutes: Record<string, string> = {
-      admin: `/${schoolSlug}/admin/dashboard`,
-      teacher: `/${schoolSlug}/teacher/scan`,
-      gateman: `/${schoolSlug}/gateman/scan`,
-      parent: `/${schoolSlug}/parent/my-child`,
+    if (profileError || !profile) {
+      toast.error('Could not find your school profile. Contact your admin.')
+      setLoading(false)
+      return
     }
 
-    router.push(roleRoutes[profile?.role ?? 'parent'])
+    if (!profile.is_active) {
+      toast.error('Your account has been deactivated. Contact your school admin.')
+      await supabase.auth.signOut()
+      setLoading(false)
+      return
+    }
+
+    const roleRoutes: Record<string, string> = {
+      admin:   `/${schoolSlug}/admin/dashboard`,
+      teacher: `/${schoolSlug}/teacher/scan`,
+      gateman: `/${schoolSlug}/gateman/scan`,
+      parent:  `/${schoolSlug}/parent/my-child`,
+    }
+
+    const destination = roleRoutes[profile.role]
+    if (!destination) {
+      toast.error(`Unknown role: ${profile.role}. Contact your school admin.`)
+      setLoading(false)
+      return
+    }
+
+    router.push(destination)
   }
 
   async function handleGoogleLogin() {
-    await supabase.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/${schoolSlug}/auth/callback` },
+      options: {
+        redirectTo: `${window.location.origin}/${schoolSlug}/auth/callback`,
+      },
     })
+    if (error) toast.error('Google sign-in failed. Please try again.')
   }
+
+  const errorMessage = urlError ? (URL_ERROR_MESSAGES[urlError] ?? `Authentication error: ${urlError}`) : null
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4
@@ -66,7 +107,6 @@ export default function LoginClient({ schoolSlug, schoolName }: LoginClientProps
         <div className="hidden md:flex w-52 flex-shrink-0 bg-green-600
           flex-col justify-between p-6">
           <div>
-            {/* Icon */}
             <div className="w-10 h-10 bg-white/15 rounded-xl flex items-center
               justify-center mb-4">
               <svg className="w-5 h-5 fill-white" viewBox="0 0 24 24">
@@ -81,7 +121,6 @@ export default function LoginClient({ schoolSlug, schoolName }: LoginClientProps
             </h2>
             <p className="text-white/55 text-[11px] mt-1">Attendance Portal</p>
 
-            {/* Role pills */}
             <div className="flex flex-wrap gap-1.5 mt-4">
               {['Admin', 'Teacher', 'Parent', 'Gateman'].map(role => (
                 <span key={role}
@@ -93,7 +132,6 @@ export default function LoginClient({ schoolSlug, schoolName }: LoginClientProps
             </div>
           </div>
 
-          {/* Decorative dots */}
           <div className="flex gap-1.5 items-center">
             <span className="w-1.5 h-1.5 rounded-full bg-white" />
             <span className="w-1.5 h-1.5 rounded-full bg-white/30" />
@@ -128,6 +166,15 @@ export default function LoginClient({ schoolSlug, schoolName }: LoginClientProps
             </p>
           </div>
 
+          {/* URL error banner (from OAuth callback, deactivated, etc.) */}
+          {errorMessage && (
+            <div className="flex items-start gap-2.5 bg-red-50 dark:bg-red-500/10
+              border border-red-200 dark:border-red-500/20 rounded-lg px-3 py-2.5 mb-4">
+              <AlertCircle className="w-4 h-4 text-red-500 dark:text-red-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-red-700 dark:text-red-400">{errorMessage}</p>
+            </div>
+          )}
+
           {/* Email */}
           <div className="mb-4">
             <label className="block text-[11px] font-medium text-zinc-500
@@ -142,6 +189,7 @@ export default function LoginClient({ schoolSlug, schoolName }: LoginClientProps
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder="you@school.com"
+                autoComplete="email"
                 className="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg
                   bg-zinc-50 dark:bg-zinc-800
                   border border-zinc-200 dark:border-zinc-700
@@ -161,11 +209,14 @@ export default function LoginClient({ schoolSlug, schoolName }: LoginClientProps
                 dark:text-zinc-400 uppercase tracking-wide">
                 Password
               </label>
-              <a href="#"
+              <button
+                type="button"
                 className="text-[11px] text-green-600 hover:text-green-700
-                  dark:text-green-500 dark:hover:text-green-400 transition-colors">
+                  dark:text-green-500 dark:hover:text-green-400 transition-colors"
+                onClick={() => toast('Password reset coming soon — contact your admin.')}
+              >
                 Forgot password?
-              </a>
+              </button>
             </div>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5
@@ -175,6 +226,7 @@ export default function LoginClient({ schoolSlug, schoolName }: LoginClientProps
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
+                autoComplete="current-password"
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
                 className="w-full pl-9 pr-10 py-2.5 text-sm rounded-lg
                   bg-zinc-50 dark:bg-zinc-800
