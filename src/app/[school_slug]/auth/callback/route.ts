@@ -9,6 +9,7 @@ export async function GET(
   const { school_slug } = await params
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
+  const type = requestUrl.searchParams.get('type') // 'invite', 'recovery', etc.
   const error = requestUrl.searchParams.get('error')
 
   // OAuth provider returned an error
@@ -30,7 +31,9 @@ export async function GET(
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return cookieStore.getAll() },
+        getAll() {
+          return cookieStore.getAll()
+        },
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
@@ -42,7 +45,8 @@ export async function GET(
     }
   )
 
-  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+  const { error: exchangeError } =
+    await supabase.auth.exchangeCodeForSession(code)
 
   if (exchangeError) {
     return NextResponse.redirect(
@@ -50,8 +54,26 @@ export async function GET(
     )
   }
 
-  // Get the user's role to redirect them correctly
-  const { data: { user } } = await supabase.auth.getUser()
+  // ── Invite flow: redirect to set-password page ────────────────
+  // When a teacher clicks their invite email link, type === 'invite'
+  // We redirect them to set their password rather than straight to the app.
+  if (type === 'invite') {
+    return NextResponse.redirect(
+      new URL(`/${school_slug}/auth/set-password`, request.url)
+    )
+  }
+
+  // ── Recovery flow: redirect to set-password page ──────────────
+  if (type === 'recovery') {
+    return NextResponse.redirect(
+      new URL(`/${school_slug}/auth/set-password`, request.url)
+    )
+  }
+
+  // ── Normal OAuth / magic link flow ───────────────────────────
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   if (!user) {
     return NextResponse.redirect(
@@ -66,10 +88,10 @@ export async function GET(
     .single()
 
   const roleRoutes: Record<string, string> = {
-    admin:   `/${school_slug}/admin/dashboard`,
+    admin: `/${school_slug}/admin/dashboard`,
     teacher: `/${school_slug}/teacher/scan`,
     gateman: `/${school_slug}/gateman/scan`,
-    parent:  `/${school_slug}/parent/my-child`,
+    parent: `/${school_slug}/parent/my-child`,
   }
 
   const destination = profile?.role
