@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 
-// Uses service role key — only runs on server, never exposed to client
 const supabaseAdmin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -49,7 +48,7 @@ export async function POST(req: NextRequest) {
   // ── Plan limit check ─────────────────────────────────────────
   const { data: school } = await supabaseAdmin
     .from('schools')
-    .select('max_teachers')
+    .select('max_teachers, slug')
     .eq('id', school_id)
     .single()
 
@@ -68,15 +67,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── Check if email already exists in this school ──────────────
-  const { data: existingProfile } = await supabaseAdmin
-    .from('user_profiles')
-    .select('id')
-    .eq('school_id', school_id)
-    .eq('role', role)
-    .limit(1)
-
-  // Check if auth user already exists
+  // ── Check if auth user already exists ──────────────────────
   const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
   const alreadyExists = existingUsers?.users?.find((u) => u.email === email)
   if (alreadyExists) {
@@ -86,29 +77,21 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── Build the redirect URL so the teacher lands on set-password ──
-  // After clicking the invite link, Supabase redirects to:
-  //   /[school_slug]/auth/callback?code=...
-  // which we handle and then send to set-password.
-  // We pass school_id + role as query params encoded in redirectTo.
-  const { data: schoolData } = await supabaseAdmin
-    .from('schools')
-    .select('slug')
-    .eq('id', school_id)
-    .single()
-
+  // ── Build the redirect URL ───────────────────────────────────
+  // The invite email from Supabase delivers a token_hash + type=invite.
+  // We point redirectTo at our /auth/confirm route which calls verifyOtp()
+  // server-side to establish the session, then redirects to set-password.
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
-  const redirectTo = `${baseUrl}/${schoolData?.slug ?? 'unknown'}/auth/set-password`
+  const schoolSlug = school?.slug ?? 'unknown'
 
-  // ── Send the actual invite email via Supabase ─────────────────
-  // inviteUserByEmail creates the user AND sends the invite email.
-  // The user gets a link to set their own password.
+  // /auth/confirm will verify the token then redirect to set-password
+  const redirectTo = `${baseUrl}/${schoolSlug}/auth/confirm?next=/${schoolSlug}/auth/set-password`
+
+  // ── Send invite email via Supabase ───────────────────────────
   const { data: inviteData, error: inviteError } =
     await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
       redirectTo,
       data: {
-        // Store pending profile data in user_metadata
-        // The set-password callback will create the profile after the user accepts
         pending_school_id: school_id,
         pending_role: role,
         pending_full_name: full_name,
@@ -121,12 +104,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: inviteError.message }, { status: 400 })
   }
 
-  // ── Create the user profile immediately ──────────────────────
-  // We create it now so the admin can see the pending staff member.
-  // is_active = false until the user sets their password and confirms.
-  // Actually: Supabase's inviteUserByEmail confirms the email automatically
-  // once the user clicks the link — so we create the profile now and
-  // mark the user visible to the admin straight away.
+  // ── Create the user profile immediately ─────────────────────
   const { error: profileError } = await supabaseAdmin
     .from('user_profiles')
     .insert({
@@ -135,11 +113,10 @@ export async function POST(req: NextRequest) {
       full_name,
       phone: phone || null,
       role,
-      is_active: true, // active once they accept and set a password
+      is_active: true,
     })
 
   if (profileError) {
-    // Roll back: delete the auth user if profile creation fails
     await supabaseAdmin.auth.admin.deleteUser(inviteData.user.id)
     console.error('[invite-staff] profile insert error:', profileError)
     return NextResponse.json(

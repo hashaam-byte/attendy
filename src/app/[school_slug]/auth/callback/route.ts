@@ -1,3 +1,4 @@
+
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse, type NextRequest } from 'next/server'
@@ -9,7 +10,7 @@ export async function GET(
   const { school_slug } = await params
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
-  const type = requestUrl.searchParams.get('type') // 'invite', 'recovery', etc.
+  const type = requestUrl.searchParams.get('type')
   const error = requestUrl.searchParams.get('error')
 
   // OAuth provider returned an error
@@ -45,21 +46,11 @@ export async function GET(
     }
   )
 
-  const { error: exchangeError } =
-    await supabase.auth.exchangeCodeForSession(code)
+  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
 
   if (exchangeError) {
     return NextResponse.redirect(
       new URL(`/${school_slug}/login?error=exchange_failed`, request.url)
-    )
-  }
-
-  // ── Invite flow: redirect to set-password page ────────────────
-  // When a teacher clicks their invite email link, type === 'invite'
-  // We redirect them to set their password rather than straight to the app.
-  if (type === 'invite') {
-    return NextResponse.redirect(
-      new URL(`/${school_slug}/auth/set-password`, request.url)
     )
   }
 

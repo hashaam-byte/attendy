@@ -1,74 +1,59 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, useSearchParams, useParams } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Eye, EyeOff, KeyRound, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 
-/**
- * Set Password Page
- *
- * Teachers/gatemen land here after clicking the invite email link.
- * Supabase's inviteUserByEmail redirects to:
- *   /[school_slug]/auth/set-password?code=...&type=invite
- *
- * We exchange the code for a session, then let the user set their password.
- */
 export default function SetPasswordPage() {
   const { school_slug } = useParams<{ school_slug: string }>()
-  const searchParams = useSearchParams()
   const router = useRouter()
   const supabase = createClient()
 
-  const [stage, setStage] = useState<
-    'exchanging' | 'ready' | 'saving' | 'done' | 'error'
-  >('exchanging')
+  const [stage, setStage] = useState<'loading' | 'ready' | 'saving' | 'done' | 'error'>('loading')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [userName, setUserName] = useState('')
 
-  // Exchange the code from the URL for a Supabase session
+  // The session was already established by /auth/confirm via verifyOtp().
+  // We just need to confirm it exists here.
   useEffect(() => {
-    async function exchangeCode() {
-      const code = searchParams.get('code')
+    async function checkSession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser()
 
-      if (!code) {
-        setErrorMsg(
-          'No invite code found in URL. Make sure you clicked the link directly from the email.'
+        if (error || !user) {
+          setErrorMsg(
+            'Your session could not be found. Your invite link may have expired, or you may have already used it. Ask your admin to resend the invite.'
+          )
+          setStage('error')
+          return
+        }
+
+        // Get the user's display name from user_profiles or metadata
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('full_name, role')
+          .eq('user_id', user.id)
+          .single()
+
+        setUserName(
+          profile?.full_name ??
+            user.user_metadata?.pending_full_name ??
+            user.email?.split('@')[0] ??
+            'there'
         )
+        setStage('ready')
+      } catch (err) {
+        console.error('[set-password] session check error:', err)
+        setErrorMsg('Something went wrong verifying your session. Please try again.')
         setStage('error')
-        return
       }
-
-      const { data, error } =
-        await supabase.auth.exchangeCodeForSession(code)
-
-      if (error || !data.session) {
-        setErrorMsg(
-          'Your invite link has expired or is invalid. Ask your admin to resend the invite.'
-        )
-        setStage('error')
-        return
-      }
-
-      // Get the user's name from user_profiles or user_metadata
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('full_name, role')
-        .eq('user_id', data.session.user.id)
-        .single()
-
-      setUserName(
-        profile?.full_name ??
-          data.session.user.user_metadata?.pending_full_name ??
-          'there'
-      )
-      setStage('ready')
     }
 
-    exchangeCode()
+    checkSession()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSetPassword() {
@@ -96,9 +81,7 @@ export default function SetPasswordPage() {
 
     // Redirect to the role-appropriate home after a short delay
     setTimeout(async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
       const { data: profile } = await supabase
@@ -119,23 +102,17 @@ export default function SetPasswordPage() {
     }, 2000)
   }
 
-  // ── Styles ───────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-12 h-12 bg-green-600 rounded-xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-green-900/40">
-            <svg
-              className="w-6 h-6 fill-white"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-6 h-6 fill-white" viewBox="0 0 24 24">
               <path d="M12 3L1 9l4 2.18V17l7 4 7-4v-5.82L23 9 12 3zm0 2.3L20.06 9 12 12.7 3.94 9 12 5.3zM7 14.13V17l5 2.86V14.7L7 12.5v1.63zm10 0V12.5l-5 2.2v5.16L17 17v-2.87z" />
             </svg>
           </div>
-          <h1 className="text-white font-bold text-xl tracking-tight">
-            Attendy
-          </h1>
+          <h1 className="text-white font-bold text-xl tracking-tight">Attendy</h1>
           <p className="text-zinc-500 text-sm mt-1 capitalize">
             {school_slug.replace(/-/g, ' ')}
           </p>
@@ -143,19 +120,13 @@ export default function SetPasswordPage() {
 
         {/* Card */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
-          {/* Exchanging code */}
-          {stage === 'exchanging' && (
+
+          {/* Loading — checking session */}
+          {stage === 'loading' && (
             <div className="p-8 text-center">
-              <Loader2
-                size={32}
-                className="animate-spin text-green-500 mx-auto mb-4"
-              />
-              <p className="text-white font-semibold">
-                Verifying your invite link…
-              </p>
-              <p className="text-zinc-500 text-sm mt-1">
-                Just a moment please
-              </p>
+              <Loader2 size={32} className="animate-spin text-green-500 mx-auto mb-4" />
+              <p className="text-white font-semibold">Verifying your session…</p>
+              <p className="text-zinc-500 text-sm mt-1">Just a moment please</p>
             </div>
           )}
 
@@ -165,12 +136,8 @@ export default function SetPasswordPage() {
               <div className="w-14 h-14 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
                 <AlertCircle size={28} className="text-red-400" />
               </div>
-              <h2 className="text-white font-bold text-lg mb-2">
-                Link Invalid or Expired
-              </h2>
-              <p className="text-zinc-400 text-sm leading-relaxed mb-6">
-                {errorMsg}
-              </p>
+              <h2 className="text-white font-bold text-lg mb-2">Session Invalid or Expired</h2>
+              <p className="text-zinc-400 text-sm leading-relaxed mb-6">{errorMsg}</p>
               <button
                 onClick={() => router.push(`/${school_slug}/login`)}
                 className="text-green-400 text-sm hover:text-green-300 underline"
@@ -188,8 +155,7 @@ export default function SetPasswordPage() {
                   Welcome, {userName}! 👋
                 </h2>
                 <p className="text-zinc-400 text-sm mt-1">
-                  You've been added as a staff member. Set a password to
-                  complete your account setup.
+                  You've been added as a staff member. Set a password to complete your account setup.
                 </p>
               </div>
 
@@ -200,10 +166,7 @@ export default function SetPasswordPage() {
                     New Password
                   </label>
                   <div className="relative">
-                    <KeyRound
-                      size={14}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
-                    />
+                    <KeyRound size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
                     <input
                       type={showPw ? 'text' : 'password'}
                       value={password}
@@ -228,17 +191,12 @@ export default function SetPasswordPage() {
                     Confirm Password
                   </label>
                   <div className="relative">
-                    <KeyRound
-                      size={14}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
-                    />
+                    <KeyRound size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
                     <input
                       type={showPw ? 'text' : 'password'}
                       value={confirm}
                       onChange={(e) => setConfirm(e.target.value)}
-                      onKeyDown={(e) =>
-                        e.key === 'Enter' && handleSetPassword()
-                      }
+                      onKeyDown={(e) => e.key === 'Enter' && handleSetPassword()}
                       placeholder="Repeat password"
                       autoComplete="new-password"
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/15"
@@ -268,10 +226,7 @@ export default function SetPasswordPage() {
           {/* Saving */}
           {stage === 'saving' && (
             <div className="p-8 text-center">
-              <Loader2
-                size={32}
-                className="animate-spin text-green-500 mx-auto mb-4"
-              />
+              <Loader2 size={32} className="animate-spin text-green-500 mx-auto mb-4" />
               <p className="text-white font-semibold">Setting your password…</p>
             </div>
           )}
@@ -282,12 +237,8 @@ export default function SetPasswordPage() {
               <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CheckCircle size={28} className="text-green-400" />
               </div>
-              <h2 className="text-white font-bold text-lg mb-2">
-                Password Set!
-              </h2>
-              <p className="text-zinc-400 text-sm">
-                Redirecting you to your dashboard…
-              </p>
+              <h2 className="text-white font-bold text-lg mb-2">Password Set!</h2>
+              <p className="text-zinc-400 text-sm">Redirecting you to your dashboard…</p>
             </div>
           )}
         </div>
