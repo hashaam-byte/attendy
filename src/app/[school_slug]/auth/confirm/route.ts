@@ -12,12 +12,13 @@ export async function GET(
   const { school_slug } = await params
   const { searchParams } = new URL(request.url)
 
+  const token = searchParams.get('token')
   const token_hash = searchParams.get('token_hash')
   const type = searchParams.get('type') as EmailOtpType | null
   const next = searchParams.get('next') ?? `/${school_slug}/auth/set-password`
 
   // Missing params — redirect to login with error
-  if (!token_hash || !type) {
+  if ((!token && !token_hash) || !type) {
     return NextResponse.redirect(
       new URL(`/${school_slug}/login?error=missing_token`, request.url)
     )
@@ -44,7 +45,11 @@ export async function GET(
   )
 
   // Verify the OTP token — this establishes the session server-side
-  const { error } = await supabase.auth.verifyOtp({ token_hash, type })
+  const verifyParams: any = { type }
+  if (token) verifyParams.token = token
+  else verifyParams.token_hash = token_hash
+
+  const { error } = await supabase.auth.verifyOtp(verifyParams)
 
   if (error) {
     console.error('[auth/confirm] verifyOtp error:', error)

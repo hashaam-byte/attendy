@@ -1,0 +1,21 @@
+> D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:641:export type VerifyOtpParams = VerifyMobileOtpParams | VerifyEmailOtpParams | VerifyTokenHashParams;
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:642:export interface VerifyMobileOtpParams {
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:643:    /** The user's phone number. */
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:644:    phone: string;
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:645:    /** The otp sent to the user's phone number. */
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:646:    token: string;
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:647:    /** The user's verification type. */
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:648:    type: MobileOtpType;
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:649:    options?: {
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:650:        /** A URL to send the user to after they are confirmed. */
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:651:        redirectTo?: string;
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:652:        /**
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:653:         * Verification token received when the user completes the captcha on the site.
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:654:         *
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:655:         * @deprecated
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:656:         */
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:657:        captchaToken?: string;
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:658:    };
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:659:}
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:660:export interface VerifyEmailOtpParams {
+  D:\hash_cody\coding\website\attendy\node_modules\@supabase\auth-js\dist\main\lib\types.d.ts:661:    /** The user's email address. */
