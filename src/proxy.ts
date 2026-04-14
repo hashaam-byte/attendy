@@ -52,10 +52,11 @@ export async function proxy(request: NextRequest) {
 
   const isLoginPage = pathname.endsWith('/login')
   const isCallbackPage = pathname.includes('/auth/callback')
+  const isConfirmPage = pathname.includes('/auth/confirm')
   const isStatusPage = pathname.endsWith('/status')
 
-  // Always allow: OAuth callback, login page, status page
-  if (isCallbackPage || isStatusPage) return proxyResponse
+  // Always allow: OAuth callback, confirmation flow, login page, status page
+  if (isCallbackPage || isConfirmPage || isStatusPage) return proxyResponse
 
   // Wrap all auth logic in try/catch — a DB or auth error must NEVER
   // cause a 404. Worst case: let the page render and handle it there.
