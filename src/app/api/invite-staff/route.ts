@@ -69,7 +69,9 @@ export async function POST(req: NextRequest) {
 
   // ── Check if auth user already exists ──────────────────────
   const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
-  const alreadyExists = existingUsers?.users?.find((u) => u.email === email)
+  const alreadyExists = existingUsers?.users?.find(
+    (u) => u.email?.toLowerCase() === email.toLowerCase()
+  )
 
   let authUserId: string
 
@@ -91,12 +93,11 @@ export async function POST(req: NextRequest) {
     authUserId = alreadyExists.id
   } else {
     // Create new auth user with a temporary random password
-    // They will set their real password after OTP verification
     const tempPassword = crypto.randomUUID() + crypto.randomUUID()
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: email.toLowerCase(),
       password: tempPassword,
-      email_confirm: false, // they'll confirm via OTP
+      email_confirm: true, // pre-confirm so OTP verify works immediately
       user_metadata: {
         pending_school_id: school_id,
         pending_role: role,
@@ -106,7 +107,10 @@ export async function POST(req: NextRequest) {
     })
 
     if (createError || !newUser?.user) {
-      return NextResponse.json({ message: createError?.message ?? 'Failed to create user' }, { status: 400 })
+      return NextResponse.json(
+        { message: createError?.message ?? 'Failed to create user' },
+        { status: 400 }
+      )
     }
     authUserId = newUser.user.id
   }
@@ -133,44 +137,50 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Send OTP email via Supabase signInWithOtp ────────────────
-  // We use the admin client's generateLink for OTP type to get a 6-digit code
-  // sent to the user's email. The user will enter this on the verify-otp page.
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  // ── Send OTP via Supabase admin generateLink ─────────────────
+  // Using admin generateLink with type 'magiclink' triggers the Magic Link
+  // email template. Since we've updated that template to show {{ .Token }},
+  // the user will receive a 6-digit code in the email.
+  const baseUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    'https://attendy-edu.vercel.app'
   const schoolSlug = school?.slug ?? 'unknown'
+  const verifyUrl = `${baseUrl}/${schoolSlug}/auth/verify-otp`
 
-  // Use signInWithOtp from the anon key client — this sends a 6-digit code
-  // We create a temporary browser-like client to trigger the OTP email
-  const { createClient: createBrowserLike } = await import('@supabase/supabase-js')
-  const anonClient = createBrowserLike(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-
-  const { error: otpError } = await anonClient.auth.signInWithOtp({
-    email,
+  // Use admin generateLink — this is more reliable on the server than
+  // creating an anon client and calling signInWithOtp
+  const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+    type: 'magiclink',
+    email: email.toLowerCase(),
     options: {
-      shouldCreateUser: false, // user already exists
-      data: {
-        school_name: school?.name ?? schoolSlug,
-        school_slug: schoolSlug,
-        staff_name: full_name,
-      },
+      redirectTo: verifyUrl,
     },
   })
 
-  if (otpError) {
-    console.error('[invite-staff] OTP send error:', otpError)
-    // Don't fail the whole invite — profile is created, admin can ask them to use "forgot password"
+  if (linkError) {
+    console.error('[invite-staff] generateLink error:', linkError)
+    // Profile was created but email failed — tell admin to use password reset
     return NextResponse.json(
-      { message: 'Staff added but email failed to send: ' + otpError.message },
+      {
+        message:
+          'Staff profile created but email failed to send. ' +
+          'Ask them to use "Forgot Password" on the login page. Error: ' +
+          linkError.message,
+        verify_url: verifyUrl,
+        partial_success: true,
+      },
       { status: 500 }
     )
   }
 
+  // The generateLink call triggers the Magic Link email automatically.
+  // The email template must contain {{ .Token }} to show the 6-digit code.
+
   return NextResponse.json({
     success: true,
-    message: `A 6-digit verification code has been sent to ${email}. The staff member should check their inbox and enter the code at ${baseUrl}/${schoolSlug}/auth/verify-otp`,
-    verify_url: `${baseUrl}/${schoolSlug}/auth/verify-otp`,
+    message:
+      `A 6-digit verification code has been sent to ${email}. ` +
+      `The staff member should check their inbox and enter the code at ${verifyUrl}`,
+    verify_url: verifyUrl,
   })
 }
