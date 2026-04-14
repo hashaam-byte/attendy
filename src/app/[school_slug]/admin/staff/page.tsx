@@ -8,8 +8,9 @@ import {
   Loader2,
   CheckCircle,
   XCircle,
-  MailCheck,
-  RefreshCw,
+  ShieldCheck,
+  Copy,
+  Check,
 } from 'lucide-react'
 
 type Role = 'teacher' | 'gateman'
@@ -38,8 +39,12 @@ export default function StaffPage() {
     role: 'teacher' as Role,
   })
   const [inviting, setInviting] = useState(false)
-  const [resendingId, setResendingId] = useState<string | null>(null)
   const [schoolId, setSchoolId] = useState<string | null>(null)
+  const [inviteSuccess, setInviteSuccess] = useState<{
+    email: string
+    verifyUrl: string
+  } | null>(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     load()
@@ -107,28 +112,24 @@ export default function StaffPage() {
     const data = await res.json()
 
     if (res.ok) {
-      toast.success(
-        `✉️ Invite sent to ${inviteForm.email}! They'll receive an email to set their password.`,
-        { duration: 6000 }
-      )
-      setShowInvite(false)
+      setInviteSuccess({
+        email: inviteForm.email,
+        verifyUrl: data.verify_url ?? `${window.location.origin}/${school_slug}/auth/verify-otp`,
+      })
       setInviteForm({ full_name: '', email: '', phone: '', role: 'teacher' })
-      await load() // Refresh to show new staff member
+      await load()
     } else {
       toast.error(data.message ?? 'Failed to invite staff')
     }
     setInviting(false)
   }
 
-  async function resendInvite(staffMember: Staff) {
-    setResendingId(staffMember.id)
-    // We call the API with the same data to re-invite
-    // But first get the email from auth - we'll just show a message
-    toast.info(
-      'To resend an invite, delete this staff member and invite them again with the same email.',
-      { duration: 5000 }
-    )
-    setResendingId(null)
+  function copyLink() {
+    if (inviteSuccess?.verifyUrl) {
+      navigator.clipboard.writeText(inviteSuccess.verifyUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
   const roleColors: Record<string, string> = {
@@ -144,7 +145,7 @@ export default function StaffPage() {
           <p className="text-gray-400 text-sm">{staff.length} members</p>
         </div>
         <button
-          onClick={() => setShowInvite(true)}
+          onClick={() => { setShowInvite(true); setInviteSuccess(null) }}
           className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
         >
           <UserPlus size={16} />
@@ -152,19 +153,20 @@ export default function StaffPage() {
         </button>
       </div>
 
-      {/* How invite works — info box */}
-      <div className="bg-blue-500/5 border border-blue-500/15 rounded-xl p-4 mb-6 flex gap-3">
-        <MailCheck size={18} className="text-blue-400 shrink-0 mt-0.5" />
+      {/* How login works — info box */}
+      <div className="bg-green-500/5 border border-green-500/15 rounded-xl p-4 mb-6 flex gap-3">
+        <ShieldCheck size={18} className="text-green-400 shrink-0 mt-0.5" />
         <div>
           <p className="text-white text-sm font-medium">How staff login works</p>
           <p className="text-gray-400 text-xs mt-1 leading-relaxed">
-            When you invite a staff member, they receive an email with a link to
-            set their own password. They then log in at{' '}
+            When you invite a staff member, they receive a <strong className="text-white">6-digit verification code</strong> by email. They visit{' '}
+            <span className="text-green-400 font-mono text-xs">
+              attendy.ng/{school_slug}/auth/verify-otp
+            </span>
+            , enter the code, then set their own password. After that they log in normally at{' '}
             <span className="text-green-400 font-mono text-xs">
               attendy.ng/{school_slug}/login
-            </span>{' '}
-            using their email and the password they set. If they don't receive
-            the email, check their spam folder or resend the invite.
+            </span>.
           </p>
         </div>
       </div>
@@ -173,70 +175,120 @@ export default function StaffPage() {
       {showInvite && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-sm border border-gray-800">
-            <h2 className="text-white font-bold mb-1">Invite Staff Member</h2>
-            <p className="text-gray-400 text-xs mb-4">
-              They'll receive an email to set their own password.
-            </p>
-            <div className="space-y-3">
-              <input
-                value={inviteForm.full_name}
-                onChange={(e) =>
-                  setInviteForm((p) => ({ ...p, full_name: e.target.value }))
-                }
-                placeholder="Full Name *"
-                className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-700 text-sm focus:outline-none focus:border-green-500"
-              />
-              <input
-                type="email"
-                value={inviteForm.email}
-                onChange={(e) =>
-                  setInviteForm((p) => ({ ...p, email: e.target.value }))
-                }
-                placeholder="Email Address *"
-                className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-700 text-sm focus:outline-none focus:border-green-500"
-              />
-              <input
-                value={inviteForm.phone}
-                onChange={(e) =>
-                  setInviteForm((p) => ({ ...p, phone: e.target.value }))
-                }
-                placeholder="Phone Number (optional)"
-                className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-700 text-sm focus:outline-none focus:border-green-500"
-              />
-              <select
-                value={inviteForm.role}
-                onChange={(e) =>
-                  setInviteForm((p) => ({
-                    ...p,
-                    role: e.target.value as Role,
-                  }))
-                }
-                className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-700 text-sm focus:outline-none"
-              >
-                <option value="teacher">Teacher</option>
-                <option value="gateman">Gateman</option>
-              </select>
-            </div>
-            <div className="flex gap-3 mt-4">
-              <button
-                onClick={() => setShowInvite(false)}
-                className="flex-1 bg-gray-800 text-white py-2.5 rounded-lg text-sm hover:bg-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={sendInvite}
-                disabled={inviting}
-                className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 hover:bg-green-700 disabled:opacity-50"
-              >
-                {inviting ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <MailCheck size={16} />
-                )}
-                {inviting ? 'Sending…' : 'Send Invite Email'}
-              </button>
-            </div>
+
+            {/* Success state */}
+            {inviteSuccess ? (
+              <div>
+                <div className="w-12 h-12 bg-green-500/10 border border-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle size={22} className="text-green-400" />
+                </div>
+                <h2 className="text-white font-bold text-center mb-1">Invite sent!</h2>
+                <p className="text-gray-400 text-xs text-center mb-5">
+                  A 6-digit verification code was emailed to{' '}
+                  <strong className="text-white">{inviteSuccess.email}</strong>.
+                  Ask them to check their inbox (and spam folder).
+                </p>
+
+                <div className="bg-gray-800 rounded-lg p-3 mb-4">
+                  <p className="text-gray-400 text-xs mb-2">Share this link with the staff member:</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-green-400 text-xs flex-1 truncate font-mono">
+                      {inviteSuccess.verifyUrl}
+                    </code>
+                    <button
+                      onClick={copyLink}
+                      className="text-gray-400 hover:text-white flex-shrink-0"
+                    >
+                      {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-blue-500/5 border border-blue-500/15 rounded-lg p-3 mb-5 text-xs text-gray-400 leading-relaxed">
+                  <strong className="text-white">Staff steps:</strong>
+                  <ol className="list-decimal list-inside mt-1 space-y-1">
+                    <li>Check email for the 6-digit code</li>
+                    <li>Visit the link above and enter the code</li>
+                    <li>Set their password</li>
+                    <li>Log in at <span className="text-green-400">/{school_slug}/login</span></li>
+                  </ol>
+                </div>
+
+                <button
+                  onClick={() => { setShowInvite(false); setInviteSuccess(null) }}
+                  className="w-full bg-gray-800 text-white py-2.5 rounded-lg text-sm hover:bg-gray-700"
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-white font-bold mb-1">Invite Staff Member</h2>
+                <p className="text-gray-400 text-xs mb-4">
+                  They'll receive a 6-digit code by email to verify and set their own password.
+                </p>
+                <div className="space-y-3">
+                  <input
+                    value={inviteForm.full_name}
+                    onChange={(e) =>
+                      setInviteForm((p) => ({ ...p, full_name: e.target.value }))
+                    }
+                    placeholder="Full Name *"
+                    className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-700 text-sm focus:outline-none focus:border-green-500"
+                  />
+                  <input
+                    type="email"
+                    value={inviteForm.email}
+                    onChange={(e) =>
+                      setInviteForm((p) => ({ ...p, email: e.target.value }))
+                    }
+                    placeholder="Email Address *"
+                    className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-700 text-sm focus:outline-none focus:border-green-500"
+                  />
+                  <input
+                    value={inviteForm.phone}
+                    onChange={(e) =>
+                      setInviteForm((p) => ({ ...p, phone: e.target.value }))
+                    }
+                    placeholder="Phone Number (optional)"
+                    className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-700 text-sm focus:outline-none focus:border-green-500"
+                  />
+                  <select
+                    value={inviteForm.role}
+                    onChange={(e) =>
+                      setInviteForm((p) => ({
+                        ...p,
+                        role: e.target.value as Role,
+                      }))
+                    }
+                    className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-700 text-sm focus:outline-none"
+                  >
+                    <option value="teacher">Teacher</option>
+                    <option value="gateman">Gateman</option>
+                  </select>
+                </div>
+                <div className="flex gap-3 mt-4">
+                  <button
+                    onClick={() => setShowInvite(false)}
+                    className="flex-1 bg-gray-800 text-white py-2.5 rounded-lg text-sm hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={sendInvite}
+                    disabled={inviting}
+                    className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {inviting ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <ShieldCheck size={16} />
+                    )}
+                    {inviting ? 'Sending…' : 'Send Invite Code'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

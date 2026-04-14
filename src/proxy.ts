@@ -52,15 +52,13 @@ export async function proxy(request: NextRequest) {
   const isLoginPage = pathname.endsWith('/login')
   const isCallbackPage = pathname.includes('/auth/callback')
   const isConfirmPage = pathname.includes('/auth/confirm')
-  // CRITICAL FIX: always allow set-password — the session cookie is set
-  // by the auth/confirm route handler just before redirecting here.
-  // If proxy intercepts this route while the cookie is not yet readable
-  // (race condition in SSR), the user gets bounced to login with no context.
   const isSetPasswordPage = pathname.includes('/auth/set-password')
+  // OTP verification page — always public, no session required
+  const isVerifyOtpPage = pathname.includes('/auth/verify-otp')
   const isStatusPage = pathname.endsWith('/status')
 
   // Always allow these auth flow pages through — no session required
-  if (isCallbackPage || isConfirmPage || isSetPasswordPage || isStatusPage) {
+  if (isCallbackPage || isConfirmPage || isSetPasswordPage || isVerifyOtpPage || isStatusPage) {
     return proxyResponse
   }
 
