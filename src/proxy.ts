@@ -4,7 +4,6 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function proxy(request: NextRequest) {
   let proxyResponse = NextResponse.next({ request })
 
-  // Guard: if Supabase env vars are missing, skip all auth logic
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -31,13 +30,13 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
   // Skip head-admin, static, API routes — they handle their own auth
-  const skipPrefixes = ['/head-admin', '/_next', '/favicon', '/api', '/setup']
+  const skipPrefixes = ['/head-admin', '/_next', '/favicon', '/api', '/setup', '/status']
   if (skipPrefixes.some(p => pathname.startsWith(p))) {
     return proxyResponse
   }
 
-  // Skip root
-  if (pathname === '/') return proxyResponse
+  // Skip root and status page
+  if (pathname === '/' || pathname === '/status') return proxyResponse
 
   // Extract school slug — first path segment
   const slugMatch = pathname.match(/^\/([^/]+)(?:\/|$)/)
@@ -49,30 +48,37 @@ export async function proxy(request: NextRequest) {
   const nonSchoolSlugs = ['_next', 'favicon', 'api', 'head-admin', 'setup', 'status']
   if (nonSchoolSlugs.includes(slug)) return proxyResponse
 
-  const isLoginPage = pathname.endsWith('/login')
-  const isCallbackPage = pathname.includes('/auth/callback')
-  const isConfirmPage = pathname.includes('/auth/confirm')
-  const isSetPasswordPage = pathname.includes('/auth/set-password')
-  // OTP verification page — always public, no session required
-  const isVerifyOtpPage = pathname.includes('/auth/verify-otp')
-  const isStatusPage = pathname.endsWith('/status')
+  // ── Auth flow pages that are ALWAYS public — no session check needed ──
+  // These must be accessible without being logged in
+  const publicAuthPaths = [
+    '/login',
+    '/auth/callback',
+    '/auth/confirm',
+    '/auth/set-password',
+    '/auth/verify-otp',   // Staff invite OTP verification — ALWAYS public
+  ]
 
-  // Always allow these auth flow pages through — no session required
-  if (isCallbackPage || isConfirmPage || isSetPasswordPage || isVerifyOtpPage || isStatusPage) {
+  const isPublicAuthPath = publicAuthPaths.some(p => 
+    pathname === `/${slug}${p}` || pathname.startsWith(`/${slug}${p}`)
+  )
+
+  if (isPublicAuthPath) {
     return proxyResponse
   }
 
-  // Wrap all auth logic in try/catch — a DB or auth error must NEVER
-  // cause a 404. Worst case: let the page render and handle it there.
+  // Wrap all auth logic in try/catch
   let user: any = null
   try {
     const { data } = await supabase.auth.getUser()
     user = data.user
   } catch (err) {
     console.error('[proxy] getUser() failed:', err)
+    const isLoginPage = pathname.endsWith('/login')
     if (isLoginPage) return proxyResponse
     return NextResponse.redirect(new URL(`/${slug}/login`, request.url))
   }
+
+  const isLoginPage = pathname.endsWith('/login') || pathname === `/${slug}/login`
 
   // Not logged in → redirect to school login
   if (!user && !isLoginPage) {
@@ -139,7 +145,7 @@ export async function proxy(request: NextRequest) {
     if (role && !isLoginPage) {
       const rolePrefixes = ['admin', 'teacher', 'gateman', 'parent']
       const matchedPrefix = rolePrefixes.find(r =>
-        pathname.startsWith(`/${slug}/${r}/`)
+        pathname.startsWith(`/${slug}/${r}/`) || pathname === `/${slug}/${r}`
       )
       if (matchedPrefix && matchedPrefix !== role) {
         return NextResponse.redirect(new URL(roleHome[role], request.url))
