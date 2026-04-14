@@ -2,7 +2,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { Student } from '@/lib/supabase/types'
-import { ArrowLeft, Printer, Download, Palette, Layout, Type, Image as ImageIcon, RotateCcw, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Printer, Download, Share2, Palette, Layout, Type, Image as ImageIcon, RotateCcw, ChevronDown, ChevronRight, Check, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface CardConfig {
@@ -170,13 +170,235 @@ export default function QRCardClient({
     reader.readAsDataURL(file)
   }
 
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'done'>('idle')
+  const [shareStatus, setShareStatus] = useState<'idle' | 'sharing' | 'done' | 'copied'>('idle')
+
   const handlePrint = () => window.print()
 
-  const handleDownload = () => {
-    const canvas = cardRef.current?.querySelector('canvas')
-    if (!canvas) return
-    // We'll use html2canvas-like approach via print
-    handlePrint()
+  // Renders the visible card DOM into a canvas → PNG blob
+  async function renderCardToBlob(): Promise<Blob | null> {
+    const cardEl = cardRef.current?.querySelector('.qr-card') as HTMLElement | null
+    if (!cardEl) return null
+
+    const scale = 2 // retina quality
+    const rect = cardEl.getBoundingClientRect()
+    const w = Math.round(rect.width)
+    const h = Math.round(rect.height)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = w * scale
+    canvas.height = h * scale
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.scale(scale, scale)
+
+    // ── Background ──
+    ctx.fillStyle = cfg.bgColor
+    const r = cfg.borderRadius
+    ctx.beginPath()
+    ctx.moveTo(r, 0)
+    ctx.lineTo(w - r, 0)
+    ctx.quadraticCurveTo(w, 0, w, r)
+    ctx.lineTo(w, h - r)
+    ctx.quadraticCurveTo(w, h, w - r, h)
+    ctx.lineTo(r, h)
+    ctx.quadraticCurveTo(0, h, 0, h - r)
+    ctx.lineTo(0, r)
+    ctx.quadraticCurveTo(0, 0, r, 0)
+    ctx.closePath()
+    ctx.fill()
+    ctx.clip() // clip everything to card bounds
+
+    // ── Border ──
+    if (cfg.borderWidth > 0) {
+      ctx.strokeStyle = cfg.borderColor
+      ctx.lineWidth = cfg.borderWidth
+      ctx.stroke()
+    }
+
+    // ── Header ──
+    if (cfg.headerStyle !== 'none') {
+      const headerEl = cardEl.querySelector('.card-header') as HTMLElement | null
+      if (headerEl) {
+        const headerH = headerEl.offsetHeight
+        if (cfg.headerStyle === 'gradient') {
+          const grad = ctx.createLinearGradient(0, 0, w, headerH)
+          grad.addColorStop(0, cfg.headerColor)
+          grad.addColorStop(1, cfg.headerColor + 'cc')
+          ctx.fillStyle = grad
+        } else if (cfg.headerStyle === 'minimal') {
+          ctx.fillStyle = cfg.bgColor
+        } else {
+          ctx.fillStyle = cfg.headerColor
+        }
+        ctx.fillRect(0, 0, w, headerH)
+
+        // Minimal underline
+        if (cfg.headerStyle === 'minimal') {
+          ctx.fillStyle = cfg.headerColor
+          ctx.fillRect(0, headerH - 2, w, 2)
+        }
+
+        // Logo placeholder box
+        const logoX = 16, logoY = (headerH - cfg.logoSize) / 2
+        if (cfg.logoPosition === 'header') {
+          if (cfg.logoUrl) {
+            try {
+              const img = new Image()
+              img.crossOrigin = 'anonymous'
+              await new Promise<void>((res) => {
+                img.onload = () => {
+                  ctx.save()
+                  ctx.beginPath()
+                  ctx.roundRect(logoX, logoY, cfg.logoSize, cfg.logoSize, 8)
+                  ctx.clip()
+                  ctx.drawImage(img, logoX, logoY, cfg.logoSize, cfg.logoSize)
+                  ctx.restore()
+                  res()
+                }
+                img.onerror = () => res()
+                img.src = cfg.logoUrl
+              })
+            } catch {}
+          }
+        }
+
+        // School name text
+        if (cfg.showSchoolName) {
+          const textX = cfg.logoPosition === 'header' ? logoX + cfg.logoSize + 10 : 16
+          const textColor = cfg.headerStyle === 'minimal' ? cfg.headerColor : cfg.headerTextColor
+          ctx.fillStyle = textColor
+          ctx.font = `700 13px ${cfg.fontFamily}`
+          ctx.fillText(schoolName, textX, headerH / 2 - 2)
+          ctx.font = `400 9px ${cfg.fontFamily}`
+          ctx.globalAlpha = 0.7
+          ctx.fillText('STUDENT ID CARD', textX, headerH / 2 + 11)
+          ctx.globalAlpha = 1
+        }
+      }
+    }
+
+    // ── QR Code ── (copy from the existing canvas element)
+    const qrCanvas = cardEl.querySelector('canvas') as HTMLCanvasElement | null
+    if (qrCanvas) {
+      const qrEl = qrCanvas.closest('div') as HTMLElement
+      const qrRect = qrEl.getBoundingClientRect()
+      const cardRect = cardEl.getBoundingClientRect()
+      const qrX = qrRect.left - cardRect.left
+      const qrY = qrRect.top - cardRect.top
+      const pad = 10
+      // Draw QR background box
+      ctx.fillStyle = cfg.qrBgColor
+      ctx.beginPath()
+      ctx.roundRect(qrX, qrY, qrRect.width, qrRect.height, 10)
+      ctx.fill()
+      if (cfg.borderWidth > 0) {
+        ctx.strokeStyle = cfg.borderColor
+        ctx.lineWidth = 0.5
+        ctx.stroke()
+      }
+      // Draw actual QR
+      ctx.drawImage(qrCanvas, qrX + pad, qrY + pad, cfg.qrSize, cfg.qrSize)
+    }
+
+    // ── Student name ──
+    const bodyEl = cardEl.querySelector('.card-body') as HTMLElement | null
+    if (bodyEl) {
+      const headerEl2 = cardEl.querySelector('.card-header') as HTMLElement | null
+      const headerH = headerEl2 ? headerEl2.offsetHeight : 0
+      let textY = headerH + bodyEl.offsetHeight - (cfg.showFooter ? 50 : 30)
+
+      if (cfg.showStudentName) {
+        ctx.fillStyle = cfg.nameColor
+        ctx.font = `700 ${cfg.nameFontSize}px ${cfg.fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(student.full_name, w / 2, textY)
+        textY += cfg.nameFontSize + 4
+      }
+      if (cfg.showClass) {
+        ctx.fillStyle = cfg.classColor
+        ctx.font = `400 ${cfg.classFontSize}px ${cfg.fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(student.class, w / 2, textY)
+        textY += cfg.classFontSize + 8
+      }
+      if (cfg.showId) {
+        const idText = student.qr_code.slice(0, 8).toUpperCase()
+        ctx.fillStyle = cfg.headerColor + '22'
+        const idW = 80, idH = 18
+        ctx.fillRect(w / 2 - idW / 2, textY - 13, idW, idH)
+        ctx.fillStyle = cfg.idColor
+        ctx.font = `400 10px monospace`
+        ctx.textAlign = 'center'
+        ctx.fillText(idText, w / 2, textY)
+      }
+      ctx.textAlign = 'left'
+    }
+
+    return new Promise(resolve => canvas.toBlob(blob => resolve(blob), 'image/png', 1.0))
+  }
+
+  async function handleDownload() {
+    setSaveStatus('saving')
+    try {
+      const blob = await renderCardToBlob()
+      if (!blob) { setSaveStatus('idle'); return }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${student.full_name.replace(/\s+/g, '-')}-QR-card.png`
+      a.click()
+      URL.revokeObjectURL(url)
+      setSaveStatus('done')
+      setTimeout(() => setSaveStatus('idle'), 2500)
+    } catch {
+      setSaveStatus('idle')
+    }
+  }
+
+  async function handleShare() {
+    setShareStatus('sharing')
+    try {
+      const blob = await renderCardToBlob()
+      if (!blob) { setShareStatus('idle'); return }
+
+      const file = new File([blob], `${student.full_name}-QR-card.png`, { type: 'image/png' })
+
+      // Try native Web Share API (works on Android/iOS/some desktops)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: `QR Card — ${student.full_name}`,
+          text: `Attendance QR card for ${student.full_name} (${student.class})`,
+          files: [file],
+        })
+        setShareStatus('done')
+        setTimeout(() => setShareStatus('idle'), 2000)
+      } else {
+        // Fallback: copy image URL to clipboard as data URL, or just download
+        const url = URL.createObjectURL(blob)
+        // Try clipboard API
+        try {
+          const item = new ClipboardItem({ 'image/png': blob })
+          await navigator.clipboard.write([item])
+          URL.revokeObjectURL(url)
+          setShareStatus('copied')
+          setTimeout(() => setShareStatus('idle'), 2500)
+        } catch {
+          // Last resort: trigger download with a share note
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `${student.full_name.replace(/\s+/g, '-')}-QR-card.png`
+          a.click()
+          URL.revokeObjectURL(url)
+          setShareStatus('done')
+          setTimeout(() => setShareStatus('idle'), 2500)
+        }
+      }
+    } catch (err: any) {
+      // User cancelled share — don't show error
+      if (err?.name !== 'AbortError') console.error(err)
+      setShareStatus('idle')
+    }
   }
 
   const shortId = student.qr_code.slice(0, 8).toUpperCase()
@@ -696,9 +918,27 @@ export default function QRCardClient({
               <RotateCcw size={13} />
               Reset
             </button>
+            <button
+              className="action-btn action-btn-ghost"
+              onClick={handleDownload}
+              disabled={saveStatus === 'saving'}
+              title="Save as PNG image"
+            >
+              {saveStatus === 'saving' ? <Loader2 size={13} className="spin" /> : saveStatus === 'done' ? <Check size={13} /> : <Download size={13} />}
+              {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'done' ? 'Saved!' : 'Save PNG'}
+            </button>
+            <button
+              className="action-btn action-btn-ghost"
+              onClick={handleShare}
+              disabled={shareStatus === 'sharing'}
+              title="Share via device / copy to clipboard"
+            >
+              {shareStatus === 'sharing' ? <Loader2 size={13} className="spin" /> : shareStatus === 'done' || shareStatus === 'copied' ? <Check size={13} /> : <Share2 size={13} />}
+              {shareStatus === 'sharing' ? 'Sharing…' : shareStatus === 'copied' ? 'Copied!' : shareStatus === 'done' ? 'Shared!' : 'Share'}
+            </button>
             <button className="action-btn action-btn-primary" onClick={handlePrint}>
               <Printer size={13} />
-              Print Card
+              Print
             </button>
           </div>
 
@@ -906,11 +1146,14 @@ export default function QRCardClient({
             color: '#4ade80',
             lineHeight: 1.7,
           }}>
-            TIP: Use presets as starting points → Click Print Card to print.<br/>
-            Card prints at exact size. Use A4 paper for multiple cards per page.
+            <strong style={{ color: '#00e676' }}>Print</strong> — sends to printer, best for ID cards on cardstock.<br/>
+            <strong style={{ color: '#00e676' }}>Save PNG</strong> — downloads a high-res image (2×) you can print on any device.<br/>
+            <strong style={{ color: '#00e676' }}>Share</strong> — sends via WhatsApp/Email on mobile, or copies image to clipboard on desktop.
           </div>
         </div>
       </div>
+
+      <style>{`.spin { animation: spinAnim 0.8s linear infinite; } @keyframes spinAnim { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }
