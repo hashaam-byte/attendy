@@ -5,7 +5,6 @@ export async function proxy(request: NextRequest) {
   let proxyResponse = NextResponse.next({ request })
 
   // Guard: if Supabase env vars are missing, skip all auth logic
-  // (prevents crash that causes 404 on every route)
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -47,16 +46,23 @@ export async function proxy(request: NextRequest) {
   if (!slug) return proxyResponse
 
   // Skip known non-school top-level routes
-  const nonSchoolSlugs = ['_next', 'favicon', 'api', 'head-admin', 'setup']
+  const nonSchoolSlugs = ['_next', 'favicon', 'api', 'head-admin', 'setup', 'status']
   if (nonSchoolSlugs.includes(slug)) return proxyResponse
 
   const isLoginPage = pathname.endsWith('/login')
   const isCallbackPage = pathname.includes('/auth/callback')
   const isConfirmPage = pathname.includes('/auth/confirm')
+  // CRITICAL FIX: always allow set-password — the session cookie is set
+  // by the auth/confirm route handler just before redirecting here.
+  // If proxy intercepts this route while the cookie is not yet readable
+  // (race condition in SSR), the user gets bounced to login with no context.
+  const isSetPasswordPage = pathname.includes('/auth/set-password')
   const isStatusPage = pathname.endsWith('/status')
 
-  // Always allow: OAuth callback, confirmation flow, login page, status page
-  if (isCallbackPage || isConfirmPage || isStatusPage) return proxyResponse
+  // Always allow these auth flow pages through — no session required
+  if (isCallbackPage || isConfirmPage || isSetPasswordPage || isStatusPage) {
+    return proxyResponse
+  }
 
   // Wrap all auth logic in try/catch — a DB or auth error must NEVER
   // cause a 404. Worst case: let the page render and handle it there.
@@ -66,7 +72,6 @@ export async function proxy(request: NextRequest) {
     user = data.user
   } catch (err) {
     console.error('[proxy] getUser() failed:', err)
-    // If we can't verify auth, allow login pages through
     if (isLoginPage) return proxyResponse
     return NextResponse.redirect(new URL(`/${slug}/login`, request.url))
   }
@@ -97,7 +102,6 @@ export async function proxy(request: NextRequest) {
       schoolRecord = schoolRes.data
     } catch (err) {
       console.error('[proxy] profile/school lookup failed:', err)
-      // Don't block — let the page handle it
       return proxyResponse
     }
 

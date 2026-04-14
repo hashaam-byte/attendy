@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { Eye, EyeOff, Lock, Mail, ShieldCheck, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, Lock, Mail, ShieldCheck, AlertCircle, KeyRound } from 'lucide-react'
 
 interface LoginClientProps {
   schoolSlug: string
@@ -13,12 +13,14 @@ interface LoginClientProps {
 }
 
 const URL_ERROR_MESSAGES: Record<string, string> = {
-  oauth_error:   'Google sign-in failed. Please try again.',
-  no_code:       'Authentication callback missing code. Please try again.',
+  oauth_error:     'Google sign-in failed. Please try again.',
+  no_code:         'Authentication callback missing code. Please try again.',
   exchange_failed: 'Session exchange failed. Please try again.',
-  no_user:       'No user found after sign-in. Please try again.',
-  no_profile:    'Your account has no profile set up. Contact your school admin.',
-  deactivated:   'Your account has been deactivated. Contact your school admin.',
+  no_user:         'No user found after sign-in. Please try again.',
+  no_profile:      'Your account has no profile set up. Contact your school admin.',
+  deactivated:     'Your account has been deactivated. Contact your school admin.',
+  missing_token:   'Your invite link is invalid or has expired. Ask your admin to resend the invite.',
+  invalid_token:   'Your invite link has expired or already been used. Ask your admin to resend the invite.',
 }
 
 export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginClientProps) {
@@ -30,11 +32,16 @@ export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginC
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
+  // Forgot / first-time password state
+  const [showForgot, setShowForgot] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotSent, setForgotSent] = useState(false)
+
   async function handleLogin() {
     if (!email || !password) return
     setLoading(true)
 
-    // Sign in and use the returned user directly — avoids a second getUser() call
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -46,7 +53,6 @@ export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginC
       return
     }
 
-    // Fetch role using the confirmed user id
     const { data: profile, error: profileError } = await supabase
       .from('user_profiles')
       .select('role, is_active')
@@ -93,8 +99,123 @@ export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginC
     if (error) toast.error('Google sign-in failed. Please try again.')
   }
 
-  const errorMessage = urlError ? (URL_ERROR_MESSAGES[urlError] ?? `Authentication error: ${urlError}`) : null
+  async function handleForgotPassword() {
+    if (!forgotEmail.trim()) {
+      toast.error('Please enter your email address.')
+      return
+    }
+    setForgotLoading(true)
 
+    try {
+      const res = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim(), school_slug: schoolSlug }),
+      })
+
+      // Always show success to avoid email enumeration
+      setForgotSent(true)
+    } catch {
+      setForgotSent(true) // still show success
+    } finally {
+      setForgotLoading(false)
+    }
+  }
+
+  const errorMessage = urlError
+    ? (URL_ERROR_MESSAGES[urlError] ?? `Authentication error: ${urlError}`)
+    : null
+
+  // ── Forgot password panel ──────────────────────────────────────
+  if (showForgot) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4
+        bg-zinc-100 dark:bg-zinc-950 transition-colors duration-300">
+        <div className="w-full max-w-md">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800
+            rounded-2xl overflow-hidden shadow-sm p-8">
+            <div className="mb-6">
+              <div className="w-12 h-12 bg-green-600 rounded-xl flex items-center justify-center mb-4">
+                <KeyRound className="w-6 h-6 text-white" />
+              </div>
+              <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+                {forgotSent ? 'Check your email' : 'Set or reset your password'}
+              </h1>
+              <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">
+                {forgotSent
+                  ? 'If an account with that email exists, a password reset link has been sent. Check your inbox (and spam folder).'
+                  : 'New staff member? Use this to set your password for the first time, or to reset a forgotten one.'}
+              </p>
+            </div>
+
+            {!forgotSent && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-medium text-zinc-500
+                    dark:text-zinc-400 mb-1.5 uppercase tracking-wide">
+                    Your email address
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5
+                      text-zinc-400 dark:text-zinc-500 pointer-events-none" />
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={e => setForgotEmail(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleForgotPassword()}
+                      placeholder="you@example.com"
+                      autoFocus
+                      className="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg
+                        bg-zinc-50 dark:bg-zinc-800
+                        border border-zinc-200 dark:border-zinc-700
+                        text-zinc-900 dark:text-zinc-100
+                        placeholder:text-zinc-400 dark:placeholder:text-zinc-600
+                        focus:border-green-500 dark:focus:border-green-500
+                        focus:ring-2 focus:ring-green-500/15 focus:outline-none
+                        transition-all"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleForgotPassword}
+                  disabled={forgotLoading || !forgotEmail.trim()}
+                  className="w-full flex items-center justify-center gap-2 py-2.5
+                    bg-green-600 hover:bg-green-700 active:scale-[0.99]
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                    text-white text-sm font-medium rounded-lg transition-all"
+                >
+                  {forgotLoading ? (
+                    <>
+                      <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10"
+                          stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.37 0 0 5.37 0 12h4z" />
+                      </svg>
+                      Sending…
+                    </>
+                  ) : (
+                    'Send password setup link'
+                  )}
+                </button>
+              </div>
+            )}
+
+            <button
+              onClick={() => { setShowForgot(false); setForgotSent(false); setForgotEmail('') }}
+              className="mt-4 text-sm text-zinc-500 dark:text-zinc-400
+                hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+            >
+              ← Back to sign in
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Main login form ────────────────────────────────────────────
   return (
     <div className="min-h-screen flex items-center justify-center p-4
       bg-zinc-100 dark:bg-zinc-950 transition-colors duration-300">
@@ -166,12 +287,23 @@ export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginC
             </p>
           </div>
 
-          {/* URL error banner (from OAuth callback, deactivated, etc.) */}
+          {/* URL error banner */}
           {errorMessage && (
             <div className="flex items-start gap-2.5 bg-red-50 dark:bg-red-500/10
               border border-red-200 dark:border-red-500/20 rounded-lg px-3 py-2.5 mb-4">
               <AlertCircle className="w-4 h-4 text-red-500 dark:text-red-400 mt-0.5 shrink-0" />
-              <p className="text-sm text-red-700 dark:text-red-400">{errorMessage}</p>
+              <div>
+                <p className="text-sm text-red-700 dark:text-red-400">{errorMessage}</p>
+                {(urlError === 'missing_token' || urlError === 'invalid_token') && (
+                  <button
+                    onClick={() => setShowForgot(true)}
+                    className="text-xs text-red-600 dark:text-red-400 underline mt-1
+                      hover:text-red-800 dark:hover:text-red-300"
+                  >
+                    Set password manually instead →
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -213,9 +345,12 @@ export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginC
                 type="button"
                 className="text-[11px] text-green-600 hover:text-green-700
                   dark:text-green-500 dark:hover:text-green-400 transition-colors"
-                onClick={() => toast('Password reset coming soon — contact your admin.')}
+                onClick={() => {
+                  setForgotEmail(email) // pre-fill email if they typed it
+                  setShowForgot(true)
+                }}
               >
-                Forgot password?
+                First time? / Forgot password?
               </button>
             </div>
             <div className="relative">
@@ -312,6 +447,17 @@ export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginC
             </svg>
             Continue with Google
           </button>
+
+          {/* New staff hint */}
+          <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-600 mt-4">
+            New staff?{' '}
+            <button
+              onClick={() => { setForgotEmail(email); setShowForgot(true) }}
+              className="text-green-600 dark:text-green-500 hover:underline"
+            >
+              Set up your password here
+            </button>
+          </p>
         </div>
       </div>
     </div>

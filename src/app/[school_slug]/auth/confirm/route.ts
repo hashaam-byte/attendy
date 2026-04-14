@@ -1,5 +1,3 @@
-
-
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse, type NextRequest } from 'next/server'
@@ -25,6 +23,12 @@ export async function GET(
   }
 
   const cookieStore = await cookies()
+
+  // IMPORTANT: We must use NextResponse.next() as the base so that
+  // Set-Cookie headers from verifyOtp are written to the response
+  // and survive the subsequent redirect.
+  const response = NextResponse.redirect(new URL(next, request.url))
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -33,12 +37,12 @@ export async function GET(
         getAll() {
           return cookieStore.getAll()
         },
+        // Write cookies onto the redirect response directly
+        // so the browser receives the session cookie even on redirect
         setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch {}
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options)
+          })
         },
       },
     }
@@ -58,6 +62,9 @@ export async function GET(
     )
   }
 
-  // Token verified — redirect to set-password (or wherever `next` points)
-  return NextResponse.redirect(new URL(next, request.url))
+  // Token verified — the session cookies are now set on `response`.
+  // Redirect to set-password (or wherever `next` points).
+  // The proxy.ts middleware whitelists /auth/set-password so it won't
+  // interfere with the user landing on that page.
+  return response
 }
