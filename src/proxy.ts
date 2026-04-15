@@ -55,6 +55,7 @@ export async function proxy(request: NextRequest) {
     '/auth/callback',
     '/auth/confirm',
     '/auth/set-password',
+     '/parent/login',   // ← add this
     '/auth/verify-otp',   // Staff invite OTP verification — ALWAYS public
   ]
 

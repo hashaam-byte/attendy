@@ -10,8 +10,6 @@ export async function POST(req: NextRequest) {
 
   const supabase = await createClient()
 
-  // Get student + parent phone — scoped via RLS, no extra school filter needed
-  // but we fetch school_id explicitly for the settings lookup
   const { data: student, error: studentError } = await supabase
     .from('students')
     .select('full_name, parent_phone, class, school_id')
@@ -22,7 +20,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Student not found' }, { status: 404 })
   }
 
-  // Check SMS enabled for this school
   const { data: settings } = await supabase
     .from('school_settings')
     .select('sms_enabled, whatsapp_enabled')
@@ -33,10 +30,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ skipped: true, reason: 'sms_disabled' })
   }
 
-  // Build message
-  const message = isLate
-    ? `Attendy: ${student.full_name} (${student.class}) arrived LATE at ${time}.${reason ? ` Reason: ${reason}` : ''}`
-    : `Attendy: ${student.full_name} (${student.class}) arrived safely at school at ${time}.`
+  // Get school slug so we can include portal link
+  const { data: school } = await supabase
+    .from('schools')
+    .select('slug')
+    .eq('id', student.school_id)
+    .single()
+
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://attendy-edu.vercel.app'
+  const portalLink = school?.slug ? `${baseUrl}/${school.slug}/parent/login` : null
+
+  // Build message — keep under 160 chars for 1 SMS unit
+  let message: string
+  if (isLate) {
+    message = `Attendy: ${student.full_name} arrived LATE at ${time}.${reason ? ` Reason: ${reason}.` : ''}`
+  } else {
+    message = `Attendy: ${student.full_name} (${student.class}) arrived safely at ${time}.`
+  }
+
+  // Append portal link if message is short enough
+  if (portalLink && (message.length + portalLink.length + 15) <= 160) {
+    message += ` Track: ${portalLink}`
+  } else if (portalLink) {
+    // Send as second SMS or just truncate — we choose to keep the link
+    message = message.length > 130 ? message.slice(0, 127) + '...' : message
+    message += `\n${portalLink}`
+  }
 
   // Format phone: 08012345678 → 2348012345678
   let phone = student.parent_phone.replace(/\s/g, '')
@@ -49,33 +68,54 @@ export async function POST(req: NextRequest) {
   let status: 'sent' | 'failed' = 'sent'
   let errorMessage: string | null = null
 
-  try {
-    const res = await fetch('https://api.ng.termii.com/api/sms/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: phone,
-        from: process.env.TERMII_SENDER_ID ?? 'Attendy',
-        sms: message,
-        type: 'plain',
-        channel: 'generic',
-        api_key: process.env.TERMII_API_KEY,
-      }),
-    })
+  // Only attempt to send if API key is configured
+  if (process.env.TERMII_API_KEY) {
+    try {
+      const res = await fetch('https://api.ng.termii.com/api/sms/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: phone,
+          from: process.env.TERMII_SENDER_ID ?? 'Attendy',
+          sms: message,
+          type: 'plain',
+          channel: 'dnd',   // Use DND channel to reach all Nigerian networks including DND numbers
+          api_key: process.env.TERMII_API_KEY,
+        }),
+      })
 
-    const data = await res.json()
-    if (!res.ok || data.code !== 'ok') {
+      const data = await res.json()
+      if (!res.ok || data.code !== 'ok') {
+        // Fallback to generic channel
+        const res2 = await fetch('https://api.ng.termii.com/api/sms/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: phone,
+            from: process.env.TERMII_SENDER_ID ?? 'Attendy',
+            sms: message,
+            type: 'plain',
+            channel: 'generic',
+            api_key: process.env.TERMII_API_KEY,
+          }),
+        })
+        const data2 = await res2.json()
+        if (!res2.ok || data2.code !== 'ok') {
+          status = 'failed'
+          errorMessage = JSON.stringify(data2)
+        }
+      }
+    } catch (err) {
       status = 'failed'
-      errorMessage = JSON.stringify(data)
+      errorMessage = String(err)
     }
-  } catch (err) {
-    status = 'failed'
-    errorMessage = String(err)
+  } else {
+    // Development mode: log to console instead of sending
+    console.log('[DEV — SMS not sent, no TERMII_API_KEY]', { to: phone, message })
+    status = 'sent' // mark as sent in dev so logs don't fill up with errors
+    errorMessage = 'DEV_MODE: Termii API key not configured — message logged to console only'
   }
 
-  // Log the notification
-  // attendance_id is nullable in the schema (FK with ON DELETE CASCADE)
-  // so we include it when provided, omit when not — no FK violation
   const logEntry: Record<string, any> = {
     school_id: student.school_id,
     student_id: studentId,
@@ -86,12 +126,11 @@ export async function POST(req: NextRequest) {
     error_message: errorMessage,
   }
 
-  // Only include attendance_id if it was passed and is a valid UUID
   if (attendanceId && typeof attendanceId === 'string' && attendanceId.length > 0) {
     logEntry.attendance_id = attendanceId
   }
 
   await supabase.from('notifications_log').insert(logEntry)
 
-  return NextResponse.json({ success: status === 'sent', status })
+  return NextResponse.json({ success: status === 'sent', status, dev_mode: !process.env.TERMII_API_KEY })
 }
