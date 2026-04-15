@@ -42,11 +42,11 @@ export default function VerifyOtpPage() {
     return () => clearInterval(t)
   }, [resendCooldown])
 
-  // Verify the 6-digit OTP — this is the ONLY action on this page.
+  // Verify the 8-digit OTP — this is the ONLY action on this page.
   // The code was already sent by the admin via generateLink. We don't send a new one here.
   async function handleOtpSubmit() {
     if (!email.trim()) { setError('Please enter the email address the invite was sent to'); return }
-    if (otp.trim().length < 6) { setError('Please enter the full 6-digit code'); return }
+    if (otp.trim().length < 8) { setError('Please enter the full 8-digit code'); return }
     setError('')
     setLoading(true)
 
@@ -441,7 +441,7 @@ export default function VerifyOtpPage() {
                 </div>
                 <h2>Enter your code</h2>
                 <div className="sub">
-                  Your school admin sent you an email with a <strong>6-digit code</strong> and a link. Enter the code below — or click the link in the email to skip this step.
+                  Your school admin sent you an email with a <strong>8-digit code</strong> and a link. Enter the code below — or click the link in the email to skip this step.
                 </div>
                 <div className="info-box">
                   📬 Check your <strong>inbox and spam folder</strong>. The email is from Attendy. The code expires in 1 hour. If you used the link in the email it redirected you here automatically.
@@ -470,22 +470,22 @@ export default function VerifyOtpPage() {
                 </div>
 
                 <div className="field">
-                  <label className="label">6-digit code</label>
+                  <label className="label">8-digit code</label>
                   <input
                     className="otp-input"
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    maxLength={6}
-                    placeholder="······"
+                    maxLength={8}
+                    placeholder="········"
                     value={otp}
-                    onChange={e => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
-                    onKeyDown={e => e.key === 'Enter' && otp.length === 6 && handleOtpSubmit()}
+                    onChange={e => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 8)); setError('') }}
+                    onKeyDown={e => e.key === 'Enter' && otp.length === 8 && handleOtpSubmit()}
                     autoFocus
                   />
                 </div>
 
-                <button className="btn" onClick={handleOtpSubmit} disabled={loading || otp.length < 6 || !email.trim()}>
+                <button className="btn" onClick={handleOtpSubmit} disabled={loading || otp.length < 8 || !email.trim()}>
                   {loading ? <Loader2 size={16} className="spin" /> : <ShieldCheck size={16} />}
                   {loading ? 'Verifying…' : 'Verify code'}
                 </button>
