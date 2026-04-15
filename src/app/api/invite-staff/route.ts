@@ -9,9 +9,7 @@ const supabaseAdmin = createServiceClient(
 export async function POST(req: NextRequest) {
   const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
@@ -45,7 +43,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
   }
 
-  // ── Plan limit check ─────────────────────────────────────────
+  // Plan limit check
   const { data: school } = await supabaseAdmin
     .from('schools')
     .select('max_teachers, slug, name')
@@ -60,23 +58,21 @@ export async function POST(req: NextRequest) {
 
   if (school && (currentTeachers ?? 0) >= school.max_teachers) {
     return NextResponse.json(
-      {
-        message: `Teacher/staff limit reached (${school.max_teachers}). Upgrade your plan to add more.`,
-      },
+      { message: `Teacher/staff limit reached (${school.max_teachers}). Upgrade your plan.` },
       { status: 403 }
     )
   }
 
-  // ── Check if auth user already exists ──────────────────────
+  // Check if auth user already exists
   const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
   const alreadyExists = existingUsers?.users?.find(
-    (u) => u.email?.toLowerCase() === email.toLowerCase()
+    u => u.email?.toLowerCase() === email.toLowerCase()
   )
 
   let authUserId: string
 
   if (alreadyExists) {
-    // User exists — check if they already have a profile for this school
+    // Check for duplicate profile in same school
     const { data: existingProfile } = await supabaseAdmin
       .from('user_profiles')
       .select('id')
@@ -91,32 +87,8 @@ export async function POST(req: NextRequest) {
       )
     }
     authUserId = alreadyExists.id
-  } else {
-    // Create new auth user with a temporary random password
-    const tempPassword = crypto.randomUUID() + crypto.randomUUID()
-    const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email: email.toLowerCase(),
-      password: tempPassword,
-      email_confirm: true, // pre-confirm so OTP verify works immediately
-      user_metadata: {
-        pending_school_id: school_id,
-        pending_role: role,
-        pending_full_name: full_name,
-        pending_phone: phone ?? null,
-      },
-    })
 
-    if (createError || !newUser?.user) {
-      return NextResponse.json(
-        { message: createError?.message ?? 'Failed to create user' },
-        { status: 400 }
-      )
-    }
-    authUserId = newUser.user.id
-  }
-
-  // ── Create user profile immediately ─────────────────────────
-  if (!alreadyExists) {
+    // Create the profile for the existing user
     const { error: profileError } = await supabaseAdmin
       .from('user_profiles')
       .insert({
@@ -129,6 +101,57 @@ export async function POST(req: NextRequest) {
       })
 
     if (profileError) {
+      return NextResponse.json(
+        { message: 'Failed to create profile: ' + profileError.message },
+        { status: 500 }
+      )
+    }
+  } else {
+    // ── Use inviteUserByEmail — this creates the user AND sends the Invite email template.
+    // The Invite template supports both {{ .Token }} (6-digit code) and {{ .ConfirmationURL }}
+    // (direct link). This sends EXACTLY ONE email. No double-send.
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://attendy-edu.vercel.app'
+    const schoolSlug = school?.slug ?? 'unknown'
+    const verifyUrl = `${baseUrl}/${schoolSlug}/auth/verify-otp?email=${encodeURIComponent(email.toLowerCase())}`
+
+    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+      email.toLowerCase(),
+      {
+        redirectTo: verifyUrl,
+        data: {
+          pending_school_id: school_id,
+          pending_role: role,
+          pending_full_name: full_name,
+          pending_phone: phone ?? null,
+          school_name: school?.name ?? schoolSlug,
+          school_slug: schoolSlug,
+        },
+      }
+    )
+
+    if (inviteError || !inviteData?.user) {
+      return NextResponse.json(
+        { message: inviteError?.message ?? 'Failed to send invite' },
+        { status: 400 }
+      )
+    }
+
+    authUserId = inviteData.user.id
+
+    // Create the profile
+    const { error: profileError } = await supabaseAdmin
+      .from('user_profiles')
+      .insert({
+        user_id: authUserId,
+        school_id,
+        full_name,
+        phone: phone || null,
+        role,
+        is_active: true,
+      })
+
+    if (profileError) {
+      // Rollback the auth user if profile creation failed
       await supabaseAdmin.auth.admin.deleteUser(authUserId)
       return NextResponse.json(
         { message: 'Failed to create profile: ' + profileError.message },
@@ -137,50 +160,13 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Send OTP via Supabase admin generateLink ─────────────────
-  // Using admin generateLink with type 'magiclink' triggers the Magic Link
-  // email template. Since we've updated that template to show {{ .Token }},
-  // the user will receive a 6-digit code in the email.
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    'https://attendy-edu.vercel.app'
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://attendy-edu.vercel.app'
   const schoolSlug = school?.slug ?? 'unknown'
-  const verifyUrl = `${baseUrl}/${schoolSlug}/auth/verify-otp`
-
-  // Use admin generateLink — this is more reliable on the server than
-  // creating an anon client and calling signInWithOtp
-  const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-    type: 'magiclink',
-    email: email.toLowerCase(),
-    options: {
-      redirectTo: verifyUrl,
-    },
-  })
-
-  if (linkError) {
-    console.error('[invite-staff] generateLink error:', linkError)
-    // Profile was created but email failed — tell admin to use password reset
-    return NextResponse.json(
-      {
-        message:
-          'Staff profile created but email failed to send. ' +
-          'Ask them to use "Forgot Password" on the login page. Error: ' +
-          linkError.message,
-        verify_url: verifyUrl,
-        partial_success: true,
-      },
-      { status: 500 }
-    )
-  }
-
-  // The generateLink call triggers the Magic Link email automatically.
-  // The email template must contain {{ .Token }} to show the 6-digit code.
+  const verifyUrl = `${baseUrl}/${schoolSlug}/auth/verify-otp?email=${encodeURIComponent(email.toLowerCase())}`
 
   return NextResponse.json({
     success: true,
-    message:
-      `A 6-digit verification code has been sent to ${email}. ` +
-      `The staff member should check their inbox and enter the code at ${verifyUrl}`,
+    message: `Invite sent to ${email}. They will receive a 6-digit code and a direct link.`,
     verify_url: verifyUrl,
   })
 }
