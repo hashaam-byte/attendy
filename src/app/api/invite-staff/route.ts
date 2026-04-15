@@ -73,8 +73,6 @@ export async function POST(req: NextRequest) {
     u => u.email?.toLowerCase() === email.toLowerCase()
   )
 
-  let authUserId: string
-
   if (existingUser) {
     // Check for duplicate profile in same school
     const { data: existingProfile } = await supabaseAdmin
@@ -91,13 +89,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    authUserId = existingUser.id
-
     // Create the profile for the existing user
     const { error: profileError } = await supabaseAdmin
       .from('user_profiles')
       .insert({
-        user_id: authUserId,
+        user_id: existingUser.id,
         school_id,
         full_name,
         phone: phone || null,
@@ -112,35 +108,42 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Send OTP to existing (already confirmed) user via magiclink generateLink
-    // This generates a new OTP token they can use to re-authenticate
-    const { error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'magiclink',
+    // For existing users: use signInWithOtp which reliably sends a 6-digit code
+    const { error: otpError } = await supabaseAdmin.auth.signInWithOtp({
       email: email.toLowerCase(),
-      options: { redirectTo: verifyUrl },
+      options: {
+        shouldCreateUser: false, // user already exists
+        emailRedirectTo: verifyUrl,
+      },
     })
 
-    if (linkError) {
-      console.error('[invite-staff] generateLink (magiclink) error:', linkError)
-      // Profile was created, just notify that email sending failed
+    if (otpError) {
+      console.error('[invite-staff] signInWithOtp error for existing user:', otpError)
+      // Profile was created — tell admin to share the verify link
       return NextResponse.json({
         success: true,
-        message: `Profile created for ${email} but email sending failed. Ask them to use "Forgot Password" to set their password.`,
+        message: `Profile created for ${email}. Email sending failed — share the verification link manually.`,
         verify_url: verifyUrl,
         email_sent: false,
       })
     }
 
-  } else {
-    // ── New user: Create the auth user first with a dummy password, then send OTP ──
-    // We do NOT use inviteUserByEmail because it sends a confirmation URL (not a 6-digit code)
-    // Instead: create user → generate email OTP → user verifies OTP → sets password
+    return NextResponse.json({
+      success: true,
+      message: `A 6-digit verification code has been sent to ${email}.`,
+      verify_url: verifyUrl,
+      email_sent: true,
+    })
+  }
 
-    // Step 1: Create the auth user (unconfirmed)
-    const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email: email.toLowerCase(),
-      email_confirm: false, // Keep unconfirmed so OTP verification confirms them
-      user_metadata: {
+  // ── NEW USER FLOW ──
+  // Step 1: Use inviteUserByEmail — this ALWAYS sends an email reliably
+  // We'll handle the profile creation via metadata + webhook, or right after
+  const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+    email.toLowerCase(),
+    {
+      redirectTo: verifyUrl,
+      data: {
         pending_school_id: school_id,
         pending_role: role,
         pending_full_name: full_name,
@@ -148,62 +151,66 @@ export async function POST(req: NextRequest) {
         school_name: school?.name ?? schoolSlug,
         school_slug: schoolSlug,
       },
+    }
+  )
+
+  if (inviteError || !inviteData?.user) {
+    console.error('[invite-staff] inviteUserByEmail error:', inviteError)
+    return NextResponse.json(
+      { message: inviteError?.message ?? 'Failed to send invite email' },
+      { status: 400 }
+    )
+  }
+
+  const authUserId = inviteData.user.id
+
+  // Step 2: Create the profile immediately
+  const { error: profileError } = await supabaseAdmin
+    .from('user_profiles')
+    .insert({
+      user_id: authUserId,
+      school_id,
+      full_name,
+      phone: phone || null,
+      role,
+      is_active: true,
     })
 
-    if (createError || !newUser?.user) {
-      return NextResponse.json(
-        { message: createError?.message ?? 'Failed to create user account' },
-        { status: 400 }
-      )
-    }
-
-    authUserId = newUser.user.id
-
-    // Step 2: Create the profile
-    const { error: profileError } = await supabaseAdmin
+  if (profileError) {
+    // Profile creation failed but invite email already sent
+    // Don't delete the auth user — they can still set up via the invite link
+    console.error('[invite-staff] profile insert error:', profileError)
+    // Try upsert as fallback
+    await supabaseAdmin
       .from('user_profiles')
-      .insert({
+      .upsert({
         user_id: authUserId,
         school_id,
         full_name,
         phone: phone || null,
         role,
         is_active: true,
-      })
+      }, { onConflict: 'user_id' })
+  }
 
-    if (profileError) {
-      // Rollback the auth user
-      await supabaseAdmin.auth.admin.deleteUser(authUserId)
-      return NextResponse.json(
-        { message: 'Failed to create profile: ' + profileError.message },
-        { status: 500 }
-      )
-    }
+  // Step 3: Also send a separate OTP so they can use the verify-otp page
+  // The invite email contains a magic link; we ALSO send an OTP for our custom verify flow
+  const { error: otpError } = await supabaseAdmin.auth.signInWithOtp({
+    email: email.toLowerCase(),
+    options: {
+      shouldCreateUser: false, // already created above
+      emailRedirectTo: verifyUrl,
+    },
+  })
 
-    // Step 3: Generate and send OTP email
-    // Using 'signup' type generates a 6-digit OTP for unconfirmed users
-    const { error: otpError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'signup',
-      email: email.toLowerCase(),
-      password: 'temporary-password-will-be-reset',
-      options: { redirectTo: verifyUrl },
-    })
-
-    if (otpError) {
-      console.error('[invite-staff] generateLink (signup OTP) error:', otpError)
-      // Don't rollback — profile exists, user can use resend flow
-      return NextResponse.json({
-        success: true,
-        message: `Account created for ${email} but OTP email failed to send. Use the resend option.`,
-        verify_url: verifyUrl,
-        email_sent: false,
-      })
-    }
+  if (otpError) {
+    // Invite email was already sent — OTP is a bonus. Log and continue.
+    console.warn('[invite-staff] OTP send failed (invite email already sent):', otpError.message)
   }
 
   return NextResponse.json({
     success: true,
-    message: `A 6-digit verification code has been sent to ${email}.`,
+    message: `An invitation email with a verification code has been sent to ${email}.`,
     verify_url: verifyUrl,
     email_sent: true,
   })

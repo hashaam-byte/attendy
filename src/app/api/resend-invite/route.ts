@@ -72,26 +72,23 @@ export async function POST(req: NextRequest) {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://attendy-edu.vercel.app'
   const verifyUrl = `${baseUrl}/${school_slug}/auth/verify-otp?email=${encodeURIComponent(key)}`
 
-  const isConfirmed = !!authUser.email_confirmed_at
-
-  // Choose the right OTP type:
-  // - Unconfirmed users → 'invite' type (sends 6-digit OTP)
-  // - Confirmed users → 'magiclink' type (sends 6-digit OTP)
-  const linkType = isConfirmed ? 'magiclink' : 'invite'
-
-  const { error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-    type: linkType,
+  // Use signInWithOtp for reliable 6-digit OTP delivery
+  // This works for both confirmed and unconfirmed users
+  const { error: otpError } = await supabaseAdmin.auth.signInWithOtp({
     email: key,
-    options: { redirectTo: verifyUrl },
+    options: {
+      shouldCreateUser: false, // user already exists
+      emailRedirectTo: verifyUrl,
+    },
   })
 
-  if (linkError) {
-    console.error('[resend-invite] generateLink error:', linkError.message, '| type:', linkType)
-
-    // Fallback: try the other type
-    const fallbackType = isConfirmed ? 'invite' : 'magiclink'
+  if (otpError) {
+    console.error('[resend-invite] signInWithOtp error:', otpError.message)
+    
+    // Fallback: try generateLink
+    const isConfirmed = !!authUser.email_confirmed_at
     const { error: fallbackError } = await supabaseAdmin.auth.admin.generateLink({
-      type: fallbackType,
+      type: isConfirmed ? 'magiclink' : 'signup',
       email: key,
       options: { redirectTo: verifyUrl },
     })
@@ -105,6 +102,5 @@ export async function POST(req: NextRequest) {
   }
 
   resendTracker.set(key, Date.now())
-
   return NextResponse.json({ success: true })
 }
