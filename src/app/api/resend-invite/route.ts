@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     // Fallback: try generateLink
     const isConfirmed = !!authUser.email_confirmed_at
     const { error: fallbackError } = await supabaseAdmin.auth.admin.generateLink({
-      type: isConfirmed ? 'magiclink' : 'signup',
+      type: isConfirmed ? 'magiclink' : 'invite',
       email: key,
       options: { redirectTo: verifyUrl },
     })
