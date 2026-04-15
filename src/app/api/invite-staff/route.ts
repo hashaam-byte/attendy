@@ -185,6 +185,7 @@ export async function POST(req: NextRequest) {
     const { error: otpError } = await supabaseAdmin.auth.admin.generateLink({
       type: 'signup',
       email: email.toLowerCase(),
+      password: 'temporary-password-will-be-reset',
       options: { redirectTo: verifyUrl },
     })
 
