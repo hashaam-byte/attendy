@@ -36,19 +36,15 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (!school || !school.is_active) {
-    // Don't reveal details — return generic success
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true }) // Don't reveal details
   }
 
   // Find the auth user by email
-  // NOTE: listUsers can be slow for large user bases.
-  // For production at scale, store auth user IDs in user_profiles.
   const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
   const authUser = listData?.users?.find(u => u.email?.toLowerCase() === key)
 
   if (!authUser) {
-    // Don't reveal if user exists — show generic success
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true }) // Don't reveal if user exists
   }
 
   // Verify they belong to this school and are active
@@ -76,18 +72,12 @@ export async function POST(req: NextRequest) {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://attendy-edu.vercel.app'
   const verifyUrl = `${baseUrl}/${school_slug}/auth/verify-otp?email=${encodeURIComponent(key)}`
 
-  // IMPORTANT: Use the correct link type based on whether the user is already confirmed.
-  //
-  // - Unconfirmed users (email_confirmed_at is null): use 'invite'
-  // - Confirmed users (already clicked a link before): use 'magiclink'
-  //
-  // This is the fix for the "user already registered" error on resend.
-  // inviteUserByEmail fails for already-confirmed users.
-  // generateLink with type 'magiclink' works for all users.
-
   const isConfirmed = !!authUser.email_confirmed_at
 
-  const linkType = isConfirmed ? 'magiclink' : 'invite'
+  // Choose the right OTP type:
+  // - Unconfirmed users → 'signup' type (sends 6-digit OTP)
+  // - Confirmed users → 'magiclink' type (sends 6-digit OTP)
+  const linkType = isConfirmed ? 'magiclink' : 'signup'
 
   const { error: linkError } = await supabaseAdmin.auth.admin.generateLink({
     type: linkType,
@@ -98,22 +88,17 @@ export async function POST(req: NextRequest) {
   if (linkError) {
     console.error('[resend-invite] generateLink error:', linkError.message, '| type:', linkType)
 
-    // If invite failed (e.g. user is already confirmed but we guessed wrong), try magiclink
-    if (linkType === 'invite') {
-      const { error: fallbackError } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'magiclink',
-        email: key,
-        options: { redirectTo: verifyUrl },
-      })
-      if (fallbackError) {
-        return NextResponse.json(
-          { message: 'Failed to send code. Please ask your admin to re-invite you.' },
-          { status: 500 }
-        )
-      }
-    } else {
+    // Fallback: try the other type
+    const fallbackType = isConfirmed ? 'signup' : 'magiclink'
+    const { error: fallbackError } = await supabaseAdmin.auth.admin.generateLink({
+      type: fallbackType,
+      email: key,
+      options: { redirectTo: verifyUrl },
+    })
+
+    if (fallbackError) {
       return NextResponse.json(
-        { message: 'Failed to send code: ' + linkError.message },
+        { message: 'Failed to send code. Please ask your admin to re-invite you.' },
         { status: 500 }
       )
     }

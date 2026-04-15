@@ -42,13 +42,13 @@ export default function VerifyOtpPage() {
   }, [resendCooldown])
 
   // ── OTP verification ──────────────────────────────────────────
-  // Supabase ALWAYS sends a 6-digit OTP. We try all relevant token types.
+  // Try ALL possible token types that Supabase might have used.
+  // Order matters: try the most likely ones first.
   async function handleOtpSubmit() {
     if (!email.trim()) {
       setError('Please enter the email address the invite was sent to')
       return
     }
-    // 6 digits — Supabase standard
     if (otp.trim().length !== 6) {
       setError('Please enter the full 6-digit code from your email')
       return
@@ -60,10 +60,20 @@ export default function VerifyOtpPage() {
     const cleanEmail = email.trim().toLowerCase()
     const cleanToken = otp.trim()
 
-    // Try all token types Supabase may have used
-    const typesToTry: Array<'invite' | 'magiclink' | 'email'> = ['invite', 'magiclink', 'email']
+    // Try all token types Supabase may have used.
+    // 'signup' = for new/unconfirmed users (createUser with email_confirm:false + generateLink signup)
+    // 'invite' = for inviteUserByEmail
+    // 'magiclink' = for confirmed users
+    // 'email' = generic fallback
+    const typesToTry: Array<'signup' | 'invite' | 'magiclink' | 'email'> = [
+      'signup',
+      'invite', 
+      'magiclink',
+      'email',
+    ]
 
     let verifiedUser = null
+    let lastError = ''
 
     for (const type of typesToTry) {
       try {
@@ -75,16 +85,22 @@ export default function VerifyOtpPage() {
 
         if (!verifyError && data?.user) {
           verifiedUser = data.user
+          console.log('[verify-otp] Success with type:', type)
           break
+        } else if (verifyError) {
+          lastError = verifyError.message
+          console.log('[verify-otp] Failed type:', type, verifyError.message)
         }
-      } catch {
+      } catch (err) {
+        console.log('[verify-otp] Exception for type:', type, err)
         // continue to next type
       }
     }
 
     if (!verifiedUser) {
       setError(
-        'Invalid or expired code. Check you entered all 6 digits correctly, or click "Resend code" to get a fresh one.'
+        'Invalid or expired code. Make sure you entered all 6 digits correctly. ' +
+        'The code expires after 1 hour — click "Resend code" to get a fresh one.'
       )
       setLoading(false)
       return
@@ -134,7 +150,6 @@ export default function VerifyOtpPage() {
       const json = await res.json()
 
       if (res.status === 429) {
-        // Rate limited — extract remaining seconds if possible
         const match = json.message?.match(/(\d+)s/)
         setResendCooldown(match ? parseInt(match[1]) : 60)
       } else if (!res.ok) {
@@ -346,7 +361,7 @@ export default function VerifyOtpPage() {
         }
         .eye-btn:hover { color: #e2ece6; }
 
-        /* OTP input — 6 digits */
+        /* OTP input — large, centered 6 digits */
         .otp-input {
           width: 100%; background: #0a100c;
           border: 1px solid #1a2420; border-radius: 8px;
@@ -477,16 +492,18 @@ export default function VerifyOtpPage() {
                 </div>
                 <h2>Enter your code</h2>
                 <div className="sub">
-                  Your school admin sent you an email with a <strong>6-digit code</strong>. Enter it below, or click the link in the email to be verified automatically.
+                  Check your email for a <strong>6-digit code</strong> from Attendy. Enter it below to verify your account.
                 </div>
 
                 <div className="info-box">
-                  📬 Check your <strong>inbox and spam folder</strong>. The code is <strong>6 digits</strong> and expires in 1 hour.
+                  📬 Check your <strong>inbox and spam/junk folder</strong>. The code is <strong>6 digits</strong> and expires in <strong>1 hour</strong>.
+                  <br /><br />
+                  💡 The subject line will be from <strong>Supabase</strong> or your app name — check spam if you don't see it.
                 </div>
 
                 {resendSent && (
                   <div className="success-box">
-                    ✅ A new code has been sent to your email. Check your inbox (and spam folder).
+                    ✅ A new 6-digit code has been sent. Check your inbox and spam folder.
                   </div>
                 )}
 
@@ -532,7 +549,7 @@ export default function VerifyOtpPage() {
                     onKeyDown={e => e.key === 'Enter' && otp.length === 6 && handleOtpSubmit()}
                     autoFocus
                   />
-                  <div className="otp-hint">Enter the 6 digits from your email</div>
+                  <div className="otp-hint">Numbers only — enter all 6 digits</div>
                 </div>
 
                 <button
@@ -570,7 +587,7 @@ export default function VerifyOtpPage() {
                 </div>
                 <h2>Welcome{staffName ? `, ${staffName.split(' ')[0]}` : ''}! 👋</h2>
                 <div className="sub">
-                  You're verified as staff at <strong>{schoolDisplayName || schoolName}</strong>. Set a password to complete your account.
+                  You're verified as staff at <strong>{schoolDisplayName || schoolName}</strong>. Set a password to complete your account setup.
                 </div>
                 {error && (
                   <div className="error-box">

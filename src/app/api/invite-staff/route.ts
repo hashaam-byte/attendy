@@ -63,20 +63,24 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  const schoolSlug = school?.slug ?? 'unknown'
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://attendy-edu.vercel.app'
+  const verifyUrl = `${baseUrl}/${schoolSlug}/auth/verify-otp?email=${encodeURIComponent(email.toLowerCase())}`
+
   // Check if auth user already exists
-  const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
-  const alreadyExists = existingUsers?.users?.find(
+  const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
+  const existingUser = listData?.users?.find(
     u => u.email?.toLowerCase() === email.toLowerCase()
   )
 
   let authUserId: string
 
-  if (alreadyExists) {
+  if (existingUser) {
     // Check for duplicate profile in same school
     const { data: existingProfile } = await supabaseAdmin
       .from('user_profiles')
       .select('id')
-      .eq('user_id', alreadyExists.id)
+      .eq('user_id', existingUser.id)
       .eq('school_id', school_id)
       .single()
 
@@ -86,7 +90,8 @@ export async function POST(req: NextRequest) {
         { status: 409 }
       )
     }
-    authUserId = alreadyExists.id
+
+    authUserId = existingUser.id
 
     // Create the profile for the existing user
     const { error: profileError } = await supabaseAdmin
@@ -106,39 +111,55 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       )
     }
+
+    // Send OTP to existing (already confirmed) user via magiclink generateLink
+    // This generates a new OTP token they can use to re-authenticate
+    const { error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: email.toLowerCase(),
+      options: { redirectTo: verifyUrl },
+    })
+
+    if (linkError) {
+      console.error('[invite-staff] generateLink (magiclink) error:', linkError)
+      // Profile was created, just notify that email sending failed
+      return NextResponse.json({
+        success: true,
+        message: `Profile created for ${email} but email sending failed. Ask them to use "Forgot Password" to set their password.`,
+        verify_url: verifyUrl,
+        email_sent: false,
+      })
+    }
+
   } else {
-    // ── Use inviteUserByEmail — this creates the user AND sends the Invite email template.
-    // The Invite template supports both {{ .Token }} (6-digit code) and {{ .ConfirmationURL }}
-    // (direct link). This sends EXACTLY ONE email. No double-send.
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://attendy-edu.vercel.app'
-    const schoolSlug = school?.slug ?? 'unknown'
-    const verifyUrl = `${baseUrl}/${schoolSlug}/auth/verify-otp?email=${encodeURIComponent(email.toLowerCase())}`
+    // ── New user: Create the auth user first with a dummy password, then send OTP ──
+    // We do NOT use inviteUserByEmail because it sends a confirmation URL (not a 6-digit code)
+    // Instead: create user → generate email OTP → user verifies OTP → sets password
 
-    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-      email.toLowerCase(),
-      {
-        redirectTo: verifyUrl,
-        data: {
-          pending_school_id: school_id,
-          pending_role: role,
-          pending_full_name: full_name,
-          pending_phone: phone ?? null,
-          school_name: school?.name ?? schoolSlug,
-          school_slug: schoolSlug,
-        },
-      }
-    )
+    // Step 1: Create the auth user (unconfirmed)
+    const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      email: email.toLowerCase(),
+      email_confirm: false, // Keep unconfirmed so OTP verification confirms them
+      user_metadata: {
+        pending_school_id: school_id,
+        pending_role: role,
+        pending_full_name: full_name,
+        pending_phone: phone ?? null,
+        school_name: school?.name ?? schoolSlug,
+        school_slug: schoolSlug,
+      },
+    })
 
-    if (inviteError || !inviteData?.user) {
+    if (createError || !newUser?.user) {
       return NextResponse.json(
-        { message: inviteError?.message ?? 'Failed to send invite' },
+        { message: createError?.message ?? 'Failed to create user account' },
         { status: 400 }
       )
     }
 
-    authUserId = inviteData.user.id
+    authUserId = newUser.user.id
 
-    // Create the profile
+    // Step 2: Create the profile
     const { error: profileError } = await supabaseAdmin
       .from('user_profiles')
       .insert({
@@ -151,22 +172,38 @@ export async function POST(req: NextRequest) {
       })
 
     if (profileError) {
-      // Rollback the auth user if profile creation failed
+      // Rollback the auth user
       await supabaseAdmin.auth.admin.deleteUser(authUserId)
       return NextResponse.json(
         { message: 'Failed to create profile: ' + profileError.message },
         { status: 500 }
       )
     }
-  }
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://attendy-edu.vercel.app'
-  const schoolSlug = school?.slug ?? 'unknown'
-  const verifyUrl = `${baseUrl}/${schoolSlug}/auth/verify-otp?email=${encodeURIComponent(email.toLowerCase())}`
+    // Step 3: Generate and send OTP email
+    // Using 'signup' type generates a 6-digit OTP for unconfirmed users
+    const { error: otpError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'signup',
+      email: email.toLowerCase(),
+      options: { redirectTo: verifyUrl },
+    })
+
+    if (otpError) {
+      console.error('[invite-staff] generateLink (signup OTP) error:', otpError)
+      // Don't rollback — profile exists, user can use resend flow
+      return NextResponse.json({
+        success: true,
+        message: `Account created for ${email} but OTP email failed to send. Use the resend option.`,
+        verify_url: verifyUrl,
+        email_sent: false,
+      })
+    }
+  }
 
   return NextResponse.json({
     success: true,
-    message: `Invite sent to ${email}. They will receive a 6-digit code and a direct link.`,
+    message: `A 6-digit verification code has been sent to ${email}.`,
     verify_url: verifyUrl,
+    email_sent: true,
   })
 }
