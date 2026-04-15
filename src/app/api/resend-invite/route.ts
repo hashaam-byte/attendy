@@ -75,9 +75,9 @@ export async function POST(req: NextRequest) {
   const isConfirmed = !!authUser.email_confirmed_at
 
   // Choose the right OTP type:
-  // - Unconfirmed users → 'signup' type (sends 6-digit OTP)
+  // - Unconfirmed users → 'invite' type (sends 6-digit OTP)
   // - Confirmed users → 'magiclink' type (sends 6-digit OTP)
-  const linkType = isConfirmed ? 'magiclink' : 'signup'
+  const linkType = isConfirmed ? 'magiclink' : 'invite'
 
   const { error: linkError } = await supabaseAdmin.auth.admin.generateLink({
     type: linkType,
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
     console.error('[resend-invite] generateLink error:', linkError.message, '| type:', linkType)
 
     // Fallback: try the other type
-    const fallbackType = isConfirmed ? 'signup' : 'magiclink'
+    const fallbackType = isConfirmed ? 'invite' : 'magiclink'
     const { error: fallbackError } = await supabaseAdmin.auth.admin.generateLink({
       type: fallbackType,
       email: key,
