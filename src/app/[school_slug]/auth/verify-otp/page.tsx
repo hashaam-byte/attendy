@@ -17,7 +17,6 @@ export default function VerifyOtpPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  // Pre-fill email if passed as query param (from staff invite email link)
   const emailFromUrl = searchParams?.get('email') ?? ''
 
   const [stage, setStage] = useState<Stage>('otp')
@@ -32,93 +31,118 @@ export default function VerifyOtpPage() {
   const [schoolDisplayName, setSchoolDisplayName] = useState('')
   const [resendLoading, setResendLoading] = useState(false)
   const [resendCooldown, setResendCooldown] = useState(0)
+  const [resendSent, setResendSent] = useState(false)
 
   const schoolName = school_slug ? school_slug.replace(/-/g, ' ') : ''
 
-  // Start cooldown timer after resend
   useEffect(() => {
     if (resendCooldown <= 0) return
     const t = setInterval(() => setResendCooldown(c => c - 1), 1000)
     return () => clearInterval(t)
   }, [resendCooldown])
 
-  // Verify the 8-digit OTP — this is the ONLY action on this page.
-  // The code was already sent by the admin via generateLink. We don't send a new one here.
+  // ── OTP verification ──────────────────────────────────────────
+  // Supabase ALWAYS sends a 6-digit OTP. We try all relevant token types.
   async function handleOtpSubmit() {
-    if (!email.trim()) { setError('Please enter the email address the invite was sent to'); return }
-    if (otp.trim().length < 8) { setError('Please enter the full 8-digit code'); return }
+    if (!email.trim()) {
+      setError('Please enter the email address the invite was sent to')
+      return
+    }
+    // 6 digits — Supabase standard
+    if (otp.trim().length !== 6) {
+      setError('Please enter the full 6-digit code from your email')
+      return
+    }
+
     setError('')
     setLoading(true)
 
-    // type: 'invite' matches the generateLink({ type: 'invite' }) call in the API.
-    // If admin used magiclink type, also try 'email' as fallback.
-    const { data, error: verifyError } = await supabase.auth.verifyOtp({
-      email: email.trim().toLowerCase(),
-      token: otp.trim(),
-      type: 'invite',
-    })
+    const cleanEmail = email.trim().toLowerCase()
+    const cleanToken = otp.trim()
 
-    // Fallback: try 'email' type in case admin used magiclink
-    if (verifyError || !data?.user) {
-      const { data: data2, error: verifyError2 } = await supabase.auth.verifyOtp({
-        email: email.trim().toLowerCase(),
-        token: otp.trim(),
-        type: 'email',
-      })
+    // Try all token types Supabase may have used
+    const typesToTry: Array<'invite' | 'magiclink' | 'email'> = ['invite', 'magiclink', 'email']
 
-      if (verifyError2 || !data2?.user) {
-        setError('Invalid or expired code. Use the "Resend code" button to get a fresh one.')
-        setLoading(false)
-        return
+    let verifiedUser = null
+
+    for (const type of typesToTry) {
+      try {
+        const { data, error: verifyError } = await supabase.auth.verifyOtp({
+          email: cleanEmail,
+          token: cleanToken,
+          type,
+        })
+
+        if (!verifyError && data?.user) {
+          verifiedUser = data.user
+          break
+        }
+      } catch {
+        // continue to next type
       }
-
-      // Fetch profile
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('full_name')
-        .eq('user_id', data2.user.id)
-        .single()
-      if (profile?.full_name) setStaffName(profile.full_name)
-    } else {
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('full_name')
-        .eq('user_id', data.user.id)
-        .single()
-      if (profile?.full_name) setStaffName(profile.full_name)
     }
 
+    if (!verifiedUser) {
+      setError(
+        'Invalid or expired code. Check you entered all 6 digits correctly, or click "Resend code" to get a fresh one.'
+      )
+      setLoading(false)
+      return
+    }
+
+    // Fetch profile for welcome message
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('full_name')
+        .eq('user_id', verifiedUser.id)
+        .single()
+      if (profile?.full_name) setStaffName(profile.full_name)
+    } catch {}
+
     // Fetch school display name
-    const { data: school } = await supabase
-      .from('schools')
-      .select('name')
-      .eq('slug', school_slug)
-      .single()
-    if (school?.name) setSchoolDisplayName(school.name)
+    try {
+      const { data: school } = await supabase
+        .from('schools')
+        .select('name')
+        .eq('slug', school_slug)
+        .single()
+      if (school?.name) setSchoolDisplayName(school.name)
+    } catch {}
 
     setLoading(false)
     setStage('password')
   }
 
-  // Request a fresh code — calls our API which calls generateLink again
+  // ── Resend code ───────────────────────────────────────────────
   async function handleResend() {
     if (!email.trim()) { setError('Enter your email address first'); return }
     if (resendCooldown > 0) return
     setResendLoading(true)
     setError('')
+    setResendSent(false)
 
     try {
       const res = await fetch('/api/resend-invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), school_slug }),
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          school_slug,
+        }),
       })
       const json = await res.json()
-      if (!res.ok) {
+
+      if (res.status === 429) {
+        // Rate limited — extract remaining seconds if possible
+        const match = json.message?.match(/(\d+)s/)
+        setResendCooldown(match ? parseInt(match[1]) : 60)
+      } else if (!res.ok) {
         setError(json.message ?? 'Failed to resend. Ask your admin to re-invite you.')
       } else {
         setOtp('')
-        setResendCooldown(60) // 60-second cooldown
+        setResendSent(true)
+        setResendCooldown(60)
       }
     } catch {
       setError('Network error. Please try again.')
@@ -126,9 +150,16 @@ export default function VerifyOtpPage() {
     setResendLoading(false)
   }
 
+  // ── Set password ──────────────────────────────────────────────
   async function handlePasswordSubmit() {
-    if (!password || password.length < 8) { setError('Password must be at least 8 characters'); return }
-    if (password !== confirmPassword) { setError('Passwords do not match'); return }
+    if (!password || password.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
     setError('')
     setLoading(true)
 
@@ -205,7 +236,6 @@ export default function VerifyOtpPage() {
           to   { opacity: 1; transform: translateY(0) scale(1); }
         }
 
-        /* ── Brand ── */
         .brand {
           display: flex; flex-direction: column; align-items: center;
           gap: 6px; margin-bottom: 28px;
@@ -227,14 +257,12 @@ export default function VerifyOtpPage() {
           color: #4a6050; letter-spacing: 1px; text-transform: capitalize;
         }
 
-        /* ── Panel ── */
         .panel {
           background: #0d1410;
           border: 1px solid #1a2420;
           border-radius: 16px; overflow: hidden;
         }
 
-        /* ── Stepper ── */
         .stepper {
           display: flex;
           padding: 14px 20px;
@@ -274,7 +302,6 @@ export default function VerifyOtpPage() {
         }
         .step-item.active .step-label, .step-item.done .step-label { color: #4ade80; }
 
-        /* ── Body ── */
         .body { padding: 28px 26px 30px; }
 
         .icon-badge {
@@ -289,7 +316,6 @@ export default function VerifyOtpPage() {
         .sub { font-size: 13px; color: #5a7060; line-height: 1.6; margin-bottom: 22px; }
         .sub strong { color: #4ade80; font-weight: 500; }
 
-        /* ── Fields ── */
         .field { margin-bottom: 14px; }
         .label {
           display: block; font-size: 10px; font-family: 'IBM Plex Mono', monospace;
@@ -320,32 +346,45 @@ export default function VerifyOtpPage() {
         }
         .eye-btn:hover { color: #e2ece6; }
 
-        /* OTP big input */
+        /* OTP input — 6 digits */
         .otp-input {
           width: 100%; background: #0a100c;
           border: 1px solid #1a2420; border-radius: 8px;
           padding: 16px 12px;
-          font-size: 34px; font-family: 'IBM Plex Mono', monospace;
+          font-size: 36px; font-family: 'IBM Plex Mono', monospace;
           font-weight: 600; color: #4ade80;
-          letter-spacing: 16px; text-align: center; outline: none;
+          letter-spacing: 20px; text-align: center; outline: none;
           transition: border-color 0.2s, box-shadow 0.2s;
         }
         .otp-input:focus {
           border-color: rgba(22,163,74,0.45);
           box-shadow: 0 0 0 3px rgba(22,163,74,0.08);
         }
-        .otp-input::placeholder { color: #1a2820; letter-spacing: 16px; }
+        .otp-input::placeholder { color: #1a2820; letter-spacing: 20px; }
 
-        /* ── Info box ── */
+        .otp-hint {
+          text-align: center;
+          font-size: 11px;
+          color: #3a4e40;
+          margin-top: 8px;
+          font-family: 'IBM Plex Mono', monospace;
+        }
+
         .info-box {
           background: rgba(22,163,74,0.04); border: 1px solid rgba(22,163,74,0.1);
           border-radius: 7px; padding: 11px 13px;
           font-size: 12px; color: #4a6050; line-height: 1.65;
-          margin-bottom: 16px; font-family: 'IBM Plex Sans', sans-serif;
+          margin-bottom: 16px;
         }
         .info-box strong { color: #4ade80; font-weight: 500; }
 
-        /* ── Error ── */
+        .success-box {
+          background: rgba(22,163,74,0.08); border: 1px solid rgba(22,163,74,0.2);
+          border-radius: 7px; padding: 10px 13px;
+          font-size: 12px; color: #4ade80; line-height: 1.65;
+          margin-bottom: 14px;
+        }
+
         .error-box {
           display: flex; align-items: flex-start; gap: 8px;
           background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.15);
@@ -353,7 +392,6 @@ export default function VerifyOtpPage() {
           font-size: 12px; color: #f87171; margin-bottom: 14px; line-height: 1.5;
         }
 
-        /* ── Button ── */
         .btn {
           width: 100%; display: flex; align-items: center; justify-content: center;
           gap: 8px; background: #16a34a; color: white; border: none;
@@ -366,10 +404,10 @@ export default function VerifyOtpPage() {
         .btn:active { transform: scale(0.99); }
         .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
 
-        /* ── Resend row ── */
         .resend-row {
           display: flex; align-items: center; justify-content: center;
           gap: 6px; margin-top: 14px; font-size: 12px; color: #3a4e40;
+          flex-wrap: wrap; text-align: center;
         }
         .resend-btn {
           background: none; border: none; cursor: pointer;
@@ -380,7 +418,6 @@ export default function VerifyOtpPage() {
         .resend-btn:disabled { opacity: 0.4; cursor: not-allowed; }
         .resend-timer { color: #2a3e30; font-family: 'IBM Plex Mono', monospace; }
 
-        /* ── Done ── */
         .done-wrap { text-align: center; padding: 8px 0 4px; }
         .done-icon {
           width: 56px; height: 56px;
@@ -393,7 +430,6 @@ export default function VerifyOtpPage() {
         .done-title { font-size: 18px; font-weight: 600; color: #e2ece6; margin-bottom: 8px; }
         .done-sub { font-size: 13px; color: #5a7060; line-height: 1.6; }
 
-        /* ── Footer ── */
         .footer { text-align: center; margin-top: 18px; font-size: 11px; color: #2a3e30; }
         .footer a { color: #3a4e40; text-decoration: none; }
         .footer a:hover { color: #4ade80; }
@@ -405,7 +441,7 @@ export default function VerifyOtpPage() {
       <div className="glow" />
 
       <div className="card">
-        {/* Brand header */}
+        {/* Brand */}
         <div className="brand">
           <div className="brand-logo">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
@@ -441,11 +477,19 @@ export default function VerifyOtpPage() {
                 </div>
                 <h2>Enter your code</h2>
                 <div className="sub">
-                  Your school admin sent you an email with a <strong>8-digit code</strong> and a link. Enter the code below — or click the link in the email to skip this step.
+                  Your school admin sent you an email with a <strong>6-digit code</strong>. Enter it below, or click the link in the email to be verified automatically.
                 </div>
+
                 <div className="info-box">
-                  📬 Check your <strong>inbox and spam folder</strong>. The email is from Attendy. The code expires in 1 hour. If you used the link in the email it redirected you here automatically.
+                  📬 Check your <strong>inbox and spam folder</strong>. The code is <strong>6 digits</strong> and expires in 1 hour.
                 </div>
+
+                {resendSent && (
+                  <div className="success-box">
+                    ✅ A new code has been sent to your email. Check your inbox (and spam folder).
+                  </div>
+                )}
+
                 {error && (
                   <div className="error-box">
                     <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -453,11 +497,13 @@ export default function VerifyOtpPage() {
                   </div>
                 )}
 
-                {/* Email field — in case they need to confirm which address */}
                 <div className="field">
                   <label className="label">Your email</label>
                   <div className="input-wrap">
-                    <svg className="input-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    <svg className="input-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                      <polyline points="22,6 12,13 2,6"/>
+                    </svg>
                     <input
                       className="input"
                       type="email"
@@ -470,32 +516,44 @@ export default function VerifyOtpPage() {
                 </div>
 
                 <div className="field">
-                  <label className="label">8-digit code</label>
+                  <label className="label">6-digit code</label>
                   <input
                     className="otp-input"
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    maxLength={8}
-                    placeholder="········"
+                    maxLength={6}
+                    placeholder="······"
                     value={otp}
-                    onChange={e => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 8)); setError('') }}
-                    onKeyDown={e => e.key === 'Enter' && otp.length === 8 && handleOtpSubmit()}
+                    onChange={e => {
+                      setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))
+                      setError('')
+                    }}
+                    onKeyDown={e => e.key === 'Enter' && otp.length === 6 && handleOtpSubmit()}
                     autoFocus
                   />
+                  <div className="otp-hint">Enter the 6 digits from your email</div>
                 </div>
 
-                <button className="btn" onClick={handleOtpSubmit} disabled={loading || otp.length < 8 || !email.trim()}>
+                <button
+                  className="btn"
+                  onClick={handleOtpSubmit}
+                  disabled={loading || otp.length !== 6 || !email.trim()}
+                >
                   {loading ? <Loader2 size={16} className="spin" /> : <ShieldCheck size={16} />}
                   {loading ? 'Verifying…' : 'Verify code'}
                 </button>
 
                 <div className="resend-row">
-                  Code expired?{' '}
+                  Code expired or not received?{' '}
                   {resendCooldown > 0 ? (
                     <span className="resend-timer">resend in {resendCooldown}s</span>
                   ) : (
-                    <button className="resend-btn" onClick={handleResend} disabled={resendLoading || !email.trim()}>
+                    <button
+                      className="resend-btn"
+                      onClick={handleResend}
+                      disabled={resendLoading || !email.trim()}
+                    >
                       {resendLoading ? <Loader2 size={12} className="spin" /> : <RefreshCw size={12} />}
                       {resendLoading ? 'Sending…' : 'Resend code'}
                     </button>
@@ -555,7 +613,11 @@ export default function VerifyOtpPage() {
                     />
                   </div>
                 </div>
-                <button className="btn" onClick={handlePasswordSubmit} disabled={loading || !password || !confirmPassword}>
+                <button
+                  className="btn"
+                  onClick={handlePasswordSubmit}
+                  disabled={loading || !password || !confirmPassword}
+                >
                   {loading ? <Loader2 size={16} className="spin" /> : <ShieldCheck size={16} />}
                   {loading ? 'Setting password…' : 'Set password & continue'}
                 </button>
