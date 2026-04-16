@@ -14,9 +14,12 @@ export default function QRScanner({ onScan, onError, active = true }: QRScannerP
   const [started, setStarted] = useState(false)
   const lastScanRef = useRef<string>('')
   const lastScanTimeRef = useRef<number>(0)
+  const startedRef = useRef(false)
 
   useEffect(() => {
-    if (!active) return
+    if (!active || startedRef.current) return
+
+    startedRef.current = true
 
     const scanner = new Html5Qrcode('qr-reader')
     scannerRef.current = scanner
@@ -43,6 +46,7 @@ export default function QRScanner({ onScan, onError, active = true }: QRScannerP
     })
 
     return () => {
+      startedRef.current = false
       if (scannerRef.current?.isScanning) {
         scannerRef.current.stop().catch(() => {})
       }

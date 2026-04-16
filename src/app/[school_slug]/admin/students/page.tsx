@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { Plus } from 'lucide-react'
+import { Plus, Users } from 'lucide-react'
 import StudentList from './StudentList'
 import { notFound } from 'next/navigation'
 
@@ -37,13 +37,22 @@ export default async function StudentsPage({
           <h1 className="text-white text-2xl font-bold">Students</h1>
           <p className="text-gray-400 text-sm">{students?.length ?? 0} registered</p>
         </div>
-        <Link
-          href={`/${school_slug}/admin/students/register`}
-          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          <Plus size={16} />
-          Add Student
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/${school_slug}/admin/students/bulk`}
+            className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-700"
+          >
+            <Users size={16} />
+            Bulk Import
+          </Link>
+          <Link
+            href={`/${school_slug}/admin/students/register`}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            <Plus size={16} />
+            Add Student
+          </Link>
+        </div>
       </div>
       <StudentList students={students ?? []} schoolSlug={school_slug} />
     </div>

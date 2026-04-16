@@ -26,35 +26,35 @@ export default async function ReportsPage({
     return format(d, 'yyyy-MM-dd')
   })
 
-  const dailyStats = await Promise.all(
-    last7Days.map(async (day) => {
-      const [presentRes, lateRes] = await Promise.all([
-        supabase
-          .from('attendance_logs')
-          .select('id', { count: 'exact', head: true })
-          .eq('school_id', schoolId)
-          .eq('scan_type', 'entry')
-          .gte('scanned_at', `${day}T00:00:00`)
-          .lte('scanned_at', `${day}T23:59:59`),
+  const { data: allLogs } = await supabase
+    .from('attendance_logs')
+    .select('scanned_at, is_late')
+    .eq('school_id', schoolId)
+    .eq('scan_type', 'entry')
+    .gte('scanned_at', `${last7Days[0]}T00:00:00`)
+    .lte('scanned_at', `${last7Days[6]}T23:59:59`)
 
-        supabase
-          .from('attendance_logs')
-          .select('id', { count: 'exact', head: true })
-          .eq('school_id', schoolId)
-          .eq('scan_type', 'entry')
-          .eq('is_late', true)
-          .gte('scanned_at', `${day}T00:00:00`)
-          .lte('scanned_at', `${day}T23:59:59`),
-      ])
-      return {
-        date: day,
-        label: format(new Date(day + 'T12:00:00'), 'EEE'),
-        shortDate: format(new Date(day + 'T12:00:00'), 'MMM d'),
-        present: presentRes.count ?? 0,
-        late: lateRes.count ?? 0,
-      }
-    })
-  )
+  const logMap = new Map<string, { present: number, late: number }>()
+  allLogs?.forEach(log => {
+    const date = format(new Date(log.scanned_at), 'yyyy-MM-dd')
+    if (!logMap.has(date)) {
+      logMap.set(date, { present: 0, late: 0 })
+    }
+    const entry = logMap.get(date)!
+    entry.present++
+    if (log.is_late) entry.late++
+  })
+
+  const dailyStats = last7Days.map(day => {
+    const stats = logMap.get(day) || { present: 0, late: 0 }
+    return {
+      date: day,
+      label: format(new Date(day + 'T12:00:00'), 'EEE'),
+      shortDate: format(new Date(day + 'T12:00:00'), 'MMM d'),
+      present: stats.present,
+      late: stats.late,
+    }
+  })
 
   const { data: recentLate } = await supabase
     .from('attendance_logs')
@@ -369,8 +369,22 @@ export default async function ReportsPage({
           <div className="rp-title">Reports</div>
           <div className="rp-sub">7-day attendance overview</div>
         </div>
-        <div className="rp-period-badge">
-          {format(subDays(new Date(), 6), 'MMM d')} — {format(new Date(), 'MMM d, yyyy')}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+          <div className="rp-period-badge">
+            {format(subDays(new Date(), 6), 'MMM d')} — {format(new Date(), 'MMM d, yyyy')}
+          </div>
+          <a
+            href={`/api/export-attendance?from=${format(subDays(new Date(), 6), 'yyyy-MM-dd')}&to=${format(new Date(), 'yyyy-MM-dd')}`}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', color: '#4ade80',
+              background: 'rgba(0,230,118,0.06)', border: '1px solid rgba(0,230,118,0.15)',
+              padding: '6px 12px', borderRadius: 5, textDecoration: 'none',
+            }}
+            download
+          >
+            Export 7-day CSV
+          </a>
         </div>
       </div>
 
