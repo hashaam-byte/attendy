@@ -30,7 +30,7 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
   // Skip head-admin, static, API routes — they handle their own auth
-  const skipPrefixes = ['/head-admin', '/_next', '/favicon', '/api', '/setup', '/status']
+  const skipPrefixes = ['/head-admin', '/_next', '/favicon', '/api', '/setup', '/status', '/termii-test']
   if (skipPrefixes.some(p => pathname.startsWith(p))) {
     return proxyResponse
   }
@@ -45,7 +45,7 @@ export async function proxy(request: NextRequest) {
   if (!slug) return proxyResponse
 
   // Skip known non-school top-level routes
-  const nonSchoolSlugs = ['_next', 'favicon', 'api', 'head-admin', 'setup', 'status']
+  const nonSchoolSlugs = ['_next', 'favicon', 'api', 'head-admin', 'setup', 'status', 'termii-test']
   if (nonSchoolSlugs.includes(slug)) return proxyResponse
 
   // ── Auth flow pages that are ALWAYS public — no session check needed ──
