@@ -8,50 +8,14 @@ const supabaseAdmin = createClient(
 )
 
 const PARENT_JWT_SECRET = new TextEncoder().encode(
-  process.env.PARENT_JWT_SECRET ??
-    'parent-jwt-secret-attendy-change-in-prod-32chars!!'
+  process.env.PARENT_JWT_SECRET ?? 'parent-jwt-secret-attendy-change-in-prod-32chars!!'
 )
-
-// Build all possible phone variants for matching
-// DB may store numbers in various formats depending on when they were added
-function buildPhoneVariants(phone: string): string[] {
-  // phone is already E.164 without + (e.g. 2348012345678)
-  const variants = new Set<string>()
-  variants.add(phone) // 2348012345678
-
-  // Strip leading country codes to get local formats
-  if (phone.startsWith('234') && phone.length === 13) {
-    variants.add('0' + phone.slice(3)) // 08012345678
-    variants.add('+' + phone) // +2348012345678
-    variants.add(phone.slice(3)) // 8012345678
-  } else if (phone.startsWith('233')) {
-    // Ghana
-    variants.add('0' + phone.slice(3))
-    variants.add('+' + phone)
-  } else if (phone.startsWith('254')) {
-    // Kenya
-    variants.add('0' + phone.slice(3))
-    variants.add('+' + phone)
-  } else {
-    // Generic: add + prefix variant
-    variants.add('+' + phone)
-    if (phone.length > 10) {
-      // Try stripping first digit (could be country code starting with 1 digit like 1, 7, etc.)
-      variants.add('0' + phone.slice(1))
-    }
-  }
-
-  return Array.from(variants)
-}
 
 export async function POST(req: NextRequest) {
   const { phone, school_slug } = await req.json()
 
   if (!phone || !school_slug) {
-    return NextResponse.json(
-      { message: 'Phone number and school required' },
-      { status: 400 }
-    )
+    return NextResponse.json({ message: 'Phone number and school required' }, { status: 400 })
   }
 
   // Validate the school
@@ -62,14 +26,18 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (!school || !school.is_active) {
-    return NextResponse.json(
-      { message: 'School not found or inactive' },
-      { status: 404 }
-    )
+    return NextResponse.json({ message: 'School not found or inactive' }, { status: 404 })
   }
 
-  // Build all phone variants to try
-  const variants = buildPhoneVariants(phone)
+  // Normalise phone variants for matching
+  // Parent phone in DB could be stored as 0812... or 234812... or +234812...
+  const variants: string[] = [phone]
+  if (phone.startsWith('234')) {
+    variants.push('0' + phone.slice(3))   // 234812... → 0812...
+    variants.push('+' + phone)             // 234812... → +234812...
+  } else if (phone.startsWith('0')) {
+    variants.push('234' + phone.slice(1)) // 0812... → 234812...
+  }
 
   // Find students linked to this phone number in this school
   const { data: students } = await supabaseAdmin
@@ -81,10 +49,7 @@ export async function POST(req: NextRequest) {
 
   if (!students || students.length === 0) {
     return NextResponse.json(
-      {
-        message:
-          'No student found with this phone number at this school. Contact your school admin.',
-      },
+      { message: 'No student found with this phone number at this school. Contact your school admin.' },
       { status: 404 }
     )
   }
@@ -94,22 +59,18 @@ export async function POST(req: NextRequest) {
     phone,
     school_id: school.id,
     school_slug,
-    student_ids: students.map((s) => s.id),
+    student_ids: students.map(s => s.id),
     role: 'parent',
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('30d')
+    .setExpirationTime('30d') // parents stay logged in for 30 days
     .sign(PARENT_JWT_SECRET)
 
   return NextResponse.json({
     success: true,
     token,
-    students: students.map((s) => ({
-      id: s.id,
-      name: s.full_name,
-      class: s.class,
-    })),
+    students: students.map(s => ({ id: s.id, name: s.full_name, class: s.class })),
     school_name: school.name,
   })
 }
