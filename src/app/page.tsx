@@ -2,6 +2,10 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
+// ─── MOBILE APP DOWNLOAD LINK (Expo EAS Build) ───────────────────────────────
+const ANDROID_APK_URL =
+  "https://expo.dev/accounts/hash_cody/projects/attendy-mobile/builds/129bbd4a-0263-4158-b181-e676b7dd1931";
+
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -44,7 +48,6 @@ const styles = `
     pointer-events: none; z-index: 0; opacity: 0.5;
   }
 
-  /* NAV */
   .nav-wrap {
     position: sticky; top: 0; z-index: 100;
     backdrop-filter: blur(20px) saturate(180%);
@@ -90,7 +93,6 @@ const styles = `
   }
   .nav-cta:hover { background: var(--green-light); transform: translateY(-1px); }
 
-  /* HERO */
   .hero {
     position: relative;
     max-width: 1100px; margin: 0 auto;
@@ -132,10 +134,8 @@ const styles = `
     border-radius: 50%;
     animation: pulse 2s infinite;
   }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
   .hero h1 {
     font-family: var(--font-display);
     font-size: clamp(2.6rem, 6vw, 4.8rem);
@@ -159,7 +159,7 @@ const styles = `
   .hero-actions {
     display: flex; align-items: center; justify-content: center;
     gap: 12px; flex-wrap: wrap;
-    margin-bottom: 60px;
+    margin-bottom: 32px;
     position: relative; z-index: 1;
   }
   .btn-primary {
@@ -189,7 +189,24 @@ const styles = `
   }
   .btn-ghost:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.2); }
 
-  /* SMS DEMO */
+  /* App download banner */
+  .app-download-strip {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: rgba(22,163,74,0.08);
+    border: 1px solid var(--green-border);
+    border-radius: 12px;
+    padding: 10px 18px;
+    margin-bottom: 48px;
+    position: relative; z-index: 1;
+    font-size: 13px;
+    color: #4ade80;
+    cursor: pointer;
+    transition: background 0.15s;
+    text-decoration: none;
+  }
+  .app-download-strip:hover { background: rgba(22,163,74,0.14); }
+  .app-download-strip svg { flex-shrink: 0; }
+
   .sms-demo {
     display: inline-flex;
     background: var(--bg-card);
@@ -215,7 +232,6 @@ const styles = `
   .sms-text strong { color: #fff; }
   .sms-time { font-size: 11px; color: var(--muted); font-family: var(--font-mono); margin-top: 6px; }
 
-  /* STATS BAR */
   .stats-bar {
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
@@ -236,7 +252,6 @@ const styles = `
   .stat-num span { color: var(--green-light); }
   .stat-label { font-size: 13px; color: var(--muted); }
 
-  /* SHARED SECTION */
   .section { position: relative; z-index: 1; }
   .section-tag {
     display: inline-block;
@@ -258,7 +273,6 @@ const styles = `
   .section-sub { font-size: 17px; color: var(--muted); max-width: 520px; line-height: 1.65; }
   .container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
 
-  /* PROBLEM */
   .problem { padding: 100px 0; }
   .problem-grid {
     display: grid; grid-template-columns: repeat(3, 1fr);
@@ -279,7 +293,6 @@ const styles = `
   .problem-title { font-size: 17px; font-weight: 600; color: #fff; margin-bottom: 10px; letter-spacing: -0.3px; }
   .problem-desc { font-size: 14px; color: var(--muted); line-height: 1.7; }
 
-  /* HOW IT WORKS */
   .how { padding: 100px 0; }
   .steps {
     display: grid; grid-template-columns: repeat(4, 1fr);
@@ -311,7 +324,6 @@ const styles = `
   .step-title { font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 10px; letter-spacing: -0.2px; }
   .step-desc { font-size: 13px; color: var(--muted); line-height: 1.65; }
 
-  /* FEATURES */
   .features { padding: 100px 0; }
   .features-layout {
     display: grid; grid-template-columns: 1fr 1fr;
@@ -342,7 +354,6 @@ const styles = `
   .feat-desc { font-size: 14px; color: var(--muted); line-height: 1.7; }
   .feat-wide-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
 
-  /* PRICING */
   .pricing { padding: 100px 0; }
   .pricing-grid {
     display: grid; grid-template-columns: repeat(3, 1fr);
@@ -400,9 +411,7 @@ const styles = `
   .plan-btn-ghost:hover { background: rgba(255,255,255,0.05); }
   .pricing-note { text-align: center; font-size: 13px; color: var(--muted2); margin-top: 20px; }
 
-  .school-login {
-    padding: 100px 0;
-  }
+  .school-login { padding: 100px 0; }
   .school-login-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -411,97 +420,46 @@ const styles = `
     max-width: 760px;
     margin: 0 auto;
   }
-  .school-login-grid {
-    display: grid;
-    gap: 20px;
-    margin-top: 24px;
-  }
+  .school-login-grid { display: grid; gap: 20px; margin-top: 24px; }
   .school-login-field {
-    display: flex;
-    gap: 14px;
-    align-items: center;
+    display: flex; gap: 14px; align-items: center;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 16px;
-    padding: 16px 18px;
+    border-radius: 16px; padding: 16px 18px;
   }
   .school-login-field input {
-    width: 100%;
-    background: transparent;
-    border: none;
-    color: var(--text);
-    font-size: 15px;
-    outline: none;
+    width: 100%; background: transparent; border: none;
+    color: var(--text); font-size: 15px; outline: none;
   }
-  .school-login-field span {
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: 14px;
-    white-space: nowrap;
-  }
-  .school-login-help {
-    color: var(--muted);
-    font-size: 13px;
-    line-height: 1.6;
-  }
-  .school-login-help a {
-    color: var(--green-light);
-    text-decoration: none;
-  }
-  .school-login-footer {
-    text-align: center;
-    color: var(--muted);
-    font-size: 13px;
-    margin-top: 18px;
-  }
+  .school-login-field span { color: var(--muted); font-family: var(--font-mono); font-size: 14px; white-space: nowrap; }
+  .school-login-help { color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .school-login-help a { color: var(--green-light); text-decoration: none; }
+  .school-login-footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 18px; }
 
-  /* WHO */
   .who { padding: 80px 0; }
   .who-tags { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
   .who-tag {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    color: var(--muted);
-    font-size: 14px;
-    padding: 10px 18px;
-    border-radius: 8px;
-    transition: all 0.15s;
+    background: var(--bg-card); border: 1px solid var(--border);
+    color: var(--muted); font-size: 14px; padding: 10px 18px;
+    border-radius: 8px; transition: all 0.15s;
   }
   .who-tag:hover { border-color: var(--green-border); color: var(--text); }
 
-  /* CTA */
   .cta-section {
-    padding: 120px 2rem;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-    z-index: 1;
+    padding: 120px 2rem; text-align: center;
+    position: relative; overflow: hidden; z-index: 1;
   }
   .cta-glow {
-    position: absolute;
-    bottom: -100px; left: 50%; transform: translateX(-50%);
+    position: absolute; bottom: -100px; left: 50%; transform: translateX(-50%);
     width: 600px; height: 400px;
     background: radial-gradient(ellipse at center, rgba(22,163,74,0.15) 0%, transparent 70%);
     pointer-events: none;
   }
-  .cta-grid-line {
-    position: absolute; inset: 0;
-    background-image:
-      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
-    background-size: 60px 60px;
-    mask-image: radial-gradient(ellipse 80% 100% at 50% 100%, black 0%, transparent 70%);
-    pointer-events: none;
-  }
   .cta-section h2 {
-    font-size: clamp(2rem, 4vw, 3.6rem);
-    font-weight: 700;
-    letter-spacing: -1.5px;
-    color: #fff;
-    max-width: 700px;
-    margin: 0 auto 20px;
-    line-height: 1.1;
-    position: relative; z-index: 1;
+    font-size: clamp(2rem, 4vw, 3.6rem); font-weight: 700;
+    letter-spacing: -1.5px; color: #fff;
+    max-width: 700px; margin: 0 auto 20px;
+    line-height: 1.1; position: relative; z-index: 1;
   }
   .cta-section p { font-size: 17px; color: var(--muted); max-width: 480px; margin: 0 auto 40px; position: relative; z-index: 1; }
   .cta-contacts {
@@ -512,18 +470,14 @@ const styles = `
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 13px; color: var(--muted);
     text-decoration: none; font-family: var(--font-mono);
-    padding: 6px 14px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    transition: all 0.15s;
+    padding: 6px 14px; border: 1px solid var(--border);
+    border-radius: 6px; transition: all 0.15s;
   }
   .contact-link:hover { color: var(--text); border-color: var(--border-hover); }
 
-  /* FOOTER */
   .footer {
     border-top: 1px solid var(--border);
-    padding: 32px 2rem;
-    position: relative; z-index: 1;
+    padding: 32px 2rem; position: relative; z-index: 1;
   }
   .footer-inner {
     max-width: 1100px; margin: 0 auto;
@@ -535,7 +489,6 @@ const styles = `
   .footer-links a { font-size: 13px; color: var(--muted); text-decoration: none; transition: color 0.15s; font-family: var(--font-mono); }
   .footer-links a:hover { color: var(--text); }
 
-  /* RESPONSIVE */
   @media (max-width: 768px) {
     .nav-link.hide-mobile { display: none; }
     .stats-inner { grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -546,13 +499,10 @@ const styles = `
     .feat-wide { grid-column: span 1; }
     .feat-wide-inner { grid-template-columns: 1fr; gap: 24px; }
     .pricing-grid { grid-template-columns: 1fr; }
+    .app-download-strip { font-size: 12px; padding: 8px 14px; }
   }
 
-  /* ANIMATIONS */
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
   .fade-1 { animation: fadeUp 0.7s ease 0.1s both; }
   .fade-2 { animation: fadeUp 0.7s ease 0.2s both; }
   .fade-3 { animation: fadeUp 0.7s ease 0.3s both; }
@@ -560,175 +510,84 @@ const styles = `
   .fade-5 { animation: fadeUp 0.7s ease 0.5s both; }
 `;
 
-// ─── SVG ICONS ───────────────────────────────────────────────
 const QRIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2">
-    <rect x="3" y="3" width="7" height="7" rx="1" />
-    <rect x="14" y="3" width="7" height="7" rx="1" />
-    <rect x="3" y="14" width="7" height="7" rx="1" />
-    <rect x="17" y="17" width="4" height="4" rx="0.5" />
+    <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="17" y="17" width="4" height="4" rx="0.5" />
   </svg>
 );
-
 const QRIconGreen = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.8" width="18" height="18">
-    <rect x="3" y="3" width="7" height="7" rx="1" />
-    <rect x="14" y="3" width="7" height="7" rx="1" />
-    <rect x="3" y="14" width="7" height="7" rx="1" />
-    <rect x="17" y="17" width="4" height="4" rx="0.5" />
+    <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="17" y="17" width="4" height="4" rx="0.5" />
   </svg>
 );
-
 const ChatIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.8" width="18" height="18">
     <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
   </svg>
 );
-
 const MonitorIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.8" width="18" height="18">
-    <rect x="2" y="3" width="20" height="14" rx="2" />
-    <path d="M8 21h8M12 17v4" />
+    <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
   </svg>
 );
-
 const ShieldIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.8" width="18" height="18">
     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
   </svg>
 );
-
 const UsersIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.8" width="18" height="18">
-    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-    <circle cx="9" cy="7" r="4" />
+    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" />
     <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
   </svg>
 );
-
 const ClockIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.8" width="18" height="18">
-    <circle cx="12" cy="12" r="10" />
-    <path d="M12 8v4l3 3" />
+    <circle cx="12" cy="12" r="10" /><path d="M12 8v4l3 3" />
   </svg>
 );
-
 const ArrowIcon = () => (
   <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
     <path d="M5 12h14M12 5l7 7-7 7" />
   </svg>
 );
-
 const MailIcon = () => (
   <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
     <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
     <polyline points="22,6 12,13 2,6" />
   </svg>
 );
-
-const CodeIcon = () => (
-  <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-    <polyline points="16 18 22 12 16 6" />
-    <polyline points="8 6 2 12 8 18" />
-  </svg>
-);
-
 const SmsChatIcon = () => (
   <svg width="18" height="18" fill="none" stroke="#4ade80" strokeWidth="2" viewBox="0 0 24 24">
     <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
   </svg>
 );
+const PhoneIcon = () => (
+  <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+    <rect x="5" y="2" width="14" height="20" rx="2" /><line x1="12" y1="18" x2="12.01" y2="18" />
+  </svg>
+);
 
-// ─── DATA ────────────────────────────────────────────────────
 const problems = [
-  {
-    emoji: "📋",
-    title: "Morning registers waste time",
-    desc: "Teachers spend 10+ minutes calling names every morning. Errors happen. Registers get lost. There's no real audit trail.",
-  },
-  {
-    emoji: "😰",
-    title: "Parents are always guessing",
-    desc: "A parent has no idea if their child actually made it to school until a concerned 2 PM phone call that interrupts everyone's day.",
-  },
-  {
-    emoji: "🚪",
-    title: "Gate security is a blind spot",
-    desc: "Students slip in late, leave early, or get someone else to sign them in. No timestamp, no accountability — until something goes wrong.",
-  },
+  { emoji: "📋", title: "Morning registers waste time", desc: "Teachers spend 10+ minutes calling names every morning. Errors happen. Registers get lost. There's no real audit trail." },
+  { emoji: "😰", title: "Parents are always guessing", desc: "A parent has no idea if their child actually made it to school until a concerned 2 PM phone call that interrupts everyone's day." },
+  { emoji: "🚪", title: "Gate security is a blind spot", desc: "Students slip in late, leave early, or get someone else to sign them in. No timestamp, no accountability — until something goes wrong." },
 ];
-
 const steps = [
-  { num: "01", title: "Student gets a QR card", desc: "Register a student once and print their unique QR ID card in seconds. Done." },
+  { num: "01", title: "Student gets a QR card", desc: "Register a student once and print their unique QR ID card in seconds. Parent gets an SMS instantly." },
   { num: "02", title: "Card scanned at the gate", desc: "The gateman or teacher scans the card using any Android or iPhone camera." },
   { num: "03", title: "System logs everything", desc: "Time-stamped. Marked present, late, or early departure. Dashboard updates instantly." },
   { num: "04", title: "Parent gets an SMS", desc: '"Amara arrived safely at 7:52 AM." Instantly — no manual steps, no delays.' },
 ];
-
 const plans = [
-  {
-    name: "Basic",
-    price: "₦120,000",
-    period: "per year · up to 200 students",
-    featured: false,
-    badge: null,
-    btnClass: "plan-btn-ghost",
-    subject: "Interested in Attendy Basic",
-    features: [
-      "QR attendance scanning",
-      "Instant SMS alerts",
-      "Admin + gateman logins",
-      "Live attendance dashboard",
-      "Basic weekly reports",
-    ],
-  },
-  {
-    name: "Standard",
-    price: "₦200,000",
-    period: "per year · up to 500 students",
-    featured: true,
-    badge: "Most Popular",
-    btnClass: "plan-btn-primary",
-    subject: "Interested in Attendy Standard",
-    features: [
-      "Everything in Basic",
-      "Teacher class logins",
-      "Parent portal access",
-      "Class-by-class reports",
-      "Late cutoff overrides",
-      "Late reason tracking",
-    ],
-  },
-  {
-    name: "Pro",
-    price: "₦350,000",
-    period: "per year · unlimited students",
-    featured: false,
-    badge: null,
-    btnClass: "plan-btn-ghost",
-    subject: "Interested in Attendy Pro",
-    features: [
-      "Everything in Standard",
-      "WhatsApp alerts",
-      "Custom SMS sender ID",
-      "Export to Excel & PDF",
-      "Priority support",
-      "Multi-branch support",
-    ],
-  },
+  { name: "Basic", price: "₦120,000", period: "per year · up to 200 students", featured: false, badge: null, btnClass: "plan-btn-ghost", subject: "Interested in Attendy Basic", features: ["QR attendance scanning", "Instant SMS alerts", "Admin + gateman logins", "Live attendance dashboard", "Basic weekly reports"] },
+  { name: "Standard", price: "₦200,000", period: "per year · up to 500 students", featured: true, badge: "Most Popular", btnClass: "plan-btn-primary", subject: "Interested in Attendy Standard", features: ["Everything in Basic", "Teacher class logins", "Parent portal access", "Class-by-class reports", "Late cutoff overrides", "Late reason tracking"] },
+  { name: "Pro", price: "₦350,000", period: "per year · unlimited students", featured: false, badge: null, btnClass: "plan-btn-ghost", subject: "Interested in Attendy Pro", features: ["Everything in Standard", "WhatsApp alerts", "Custom SMS sender ID", "Export to Excel & PDF", "Priority support", "Multi-branch support"] },
 ];
+const schoolTypes = ["Private Primary Schools", "Secondary Schools", "Nursery & Crèche", "Faith-Based Schools", "International Schools", "Montessori Schools", "Boarding Schools"];
 
-const schoolTypes = [
-  "Private Primary Schools",
-  "Secondary Schools",
-  "Nursery & Crèche",
-  "Faith-Based Schools",
-  "International Schools",
-  "Montessori Schools",
-  "Boarding Schools",
-];
-
-// ─── COMPONENT ───────────────────────────────────────────────
 export default function LandingPage() {
   const [slug, setSlug] = useState("");
   const [slugError, setSlugError] = useState("");
@@ -737,10 +596,7 @@ export default function LandingPage() {
   function handleSchoolLogin(e: FormEvent) {
     e.preventDefault();
     const clean = slug.trim().toLowerCase().replace(/\s+/g, "-");
-    if (!clean) {
-      setSlugError("Please enter your school name or link");
-      return;
-    }
+    if (!clean) { setSlugError("Please enter your school name or link"); return; }
     router.push(`/${clean}/login`);
   }
 
@@ -748,14 +604,11 @@ export default function LandingPage() {
     <>
       <style>{styles}</style>
       <div className="attendy-root">
-
         {/* NAV */}
         <div className="nav-wrap">
           <div className="nav-inner">
             <a href="#" className="logo">
-              <div className="logo-icon">
-                <QRIcon />
-              </div>
+              <div className="logo-icon"><QRIcon /></div>
               Attendy
             </a>
             <div className="nav-links">
@@ -764,12 +617,7 @@ export default function LandingPage() {
               <a href="#pricing" className="nav-link hide-mobile">Pricing</a>
               <a href="#school-login" className="nav-link hide-mobile">School Login</a>
               <a href="mailto:attendyofficial@gmail.com?subject=Book a Demo" className="nav-link hide-mobile">Contact</a>
-              <a
-                href="mailto:attendyofficial@gmail.com?subject=I want to get started with Attendy"
-                className="nav-cta"
-              >
-                Get Started →
-              </a>
+              <a href="mailto:attendyofficial@gmail.com?subject=I want to get started with Attendy" className="nav-cta">Get Started →</a>
             </div>
           </div>
         </div>
@@ -778,47 +626,25 @@ export default function LandingPage() {
         <section className="hero">
           <div className="hero-glow" />
           <div className="hero-grid" />
-
-          <div className="badge fade-1">
-            <span className="badge-dot" />
-            Now live for Nigerian schools
-          </div>
-
-          <h1 className="fade-2">
-            Know the moment your<br />
-            student <em>walks through</em><br />
-            the school gate.
-          </h1>
-
-          <p className="hero-sub fade-3">
-            Attendy turns any smartphone into an attendance terminal. Scan, log, and instantly SMS parents — fully automated, zero manual effort.
-          </p>
-
+          <div className="badge fade-1"><span className="badge-dot" />Now live for Nigerian schools</div>
+          <h1 className="fade-2">Know the moment your<br />student <em>walks through</em><br />the school gate.</h1>
+          <p className="hero-sub fade-3">Attendy turns any smartphone into an attendance terminal. Scan, log, and instantly SMS parents — fully automated, zero manual effort.</p>
           <div className="hero-actions fade-4">
-            <a
-              href="mailto:attendyofficial@gmail.com?subject=I want to get started with Attendy"
-              className="btn-primary"
-            >
-              Start for free <ArrowIcon />
-            </a>
-            <a
-              href="#school-login"
-              className="btn-ghost"
-            >
-              School login
-            </a>
+            <a href="mailto:attendyofficial@gmail.com?subject=I want to get started with Attendy" className="btn-primary">Start for free <ArrowIcon /></a>
+            <a href="#school-login" className="btn-ghost">School login</a>
           </div>
+
+          {/* Mobile app download strip */}
+          <a href={ANDROID_APK_URL} target="_blank" rel="noopener noreferrer" className="app-download-strip fade-4">
+            <PhoneIcon />
+            <span>📱 Download the Attendy Android App (free) →</span>
+          </a>
 
           <div className="sms-demo fade-5">
-            <div className="sms-icon">
-              <SmsChatIcon />
-            </div>
+            <div className="sms-icon"><SmsChatIcon /></div>
             <div>
               <div className="sms-label">ATTENDY · SMS ALERT</div>
-              <div className="sms-text">
-                📍 Chidera Okafor arrived at Lagos Excellence Academy at{" "}
-                <strong>7:52 AM</strong> — on time.
-              </div>
+              <div className="sms-text">📍 Chidera Okafor arrived at Lagos Excellence Academy at <strong>7:52 AM</strong> — on time.</div>
               <div className="sms-time">Today · 07:52 AM · Delivered</div>
             </div>
           </div>
@@ -827,18 +653,9 @@ export default function LandingPage() {
         {/* STATS */}
         <div className="stats-bar">
           <div className="stats-inner">
-            <div className="stat">
-              <div className="stat-num"><span>&lt;</span>3s</div>
-              <div className="stat-label">Scan to SMS delivery time</div>
-            </div>
-            <div className="stat">
-              <div className="stat-num">100<span>%</span></div>
-              <div className="stat-label">Attendance accuracy</div>
-            </div>
-            <div className="stat">
-              <div className="stat-num">0</div>
-              <div className="stat-label">Hardware required</div>
-            </div>
+            <div className="stat"><div className="stat-num"><span>&lt;</span>3s</div><div className="stat-label">Scan to SMS delivery time</div></div>
+            <div className="stat"><div className="stat-num">100<span>%</span></div><div className="stat-label">Attendance accuracy</div></div>
+            <div className="stat"><div className="stat-num">0</div><div className="stat-label">Hardware required</div></div>
           </div>
         </div>
 
@@ -847,11 +664,9 @@ export default function LandingPage() {
           <div className="container">
             <span className="section-tag">The problem</span>
             <h2 className="section-title">Manual attendance is<br />failing your school.</h2>
-            <p className="section-sub">
-              Every school in Nigeria is still running on registers and phone calls. It&apos;s slow, inaccurate, and leaves parents completely in the dark.
-            </p>
+            <p className="section-sub">Every school in Nigeria is still running on registers and phone calls. It&apos;s slow, inaccurate, and leaves parents completely in the dark.</p>
             <div className="problem-grid">
-              {problems.map((p) => (
+              {problems.map(p => (
                 <div className="problem-card" key={p.title}>
                   <span className="problem-emoji">{p.emoji}</span>
                   <div className="problem-title">{p.title}</div>
@@ -867,11 +682,9 @@ export default function LandingPage() {
           <div className="container">
             <span className="section-tag">How it works</span>
             <h2 className="section-title">Four steps. Fully automated.</h2>
-            <p className="section-sub">
-              No new hardware. No complex setup. Just scan and go — your existing smartphones handle everything.
-            </p>
+            <p className="section-sub">No new hardware. No complex setup. Just scan and go — your existing smartphones handle everything.</p>
             <div className="steps">
-              {steps.map((s) => (
+              {steps.map(s => (
                 <div className="step" key={s.num}>
                   <div className="step-num">{s.num}</div>
                   <div className="step-title">{s.title}</div>
@@ -888,41 +701,14 @@ export default function LandingPage() {
             <span className="section-tag">Features</span>
             <h2 className="section-title">Everything your school<br />actually needs.</h2>
             <div className="features-layout">
-              <div className="feat">
-                <div className="feat-icon"><QRIconGreen /></div>
-                <div className="feat-title">QR Attendance Scanning</div>
-                <div className="feat-desc">Fast, accurate scanning on any smartphone — no dedicated scanners needed. Works on budget Android phones too.</div>
-              </div>
-              <div className="feat">
-                <div className="feat-icon"><ChatIcon /></div>
-                <div className="feat-title">Instant SMS &amp; WhatsApp Alerts</div>
-                <div className="feat-desc">Parents receive a notification the moment their child is scanned at the gate — on time, late, or early departure.</div>
-              </div>
-              <div className="feat">
-                <div className="feat-icon"><MonitorIcon /></div>
-                <div className="feat-title">Real-Time Dashboard</div>
-                <div className="feat-desc">Live counts of present, absent, and late students. Updated every second. See your entire school at a glance.</div>
-              </div>
-              <div className="feat">
-                <div className="feat-icon"><ShieldIcon /></div>
-                <div className="feat-title">Role-Based Access</div>
-                <div className="feat-desc">Admins, teachers, gatemen, and parents each have their own controlled view — no oversharing, no confusion.</div>
-              </div>
-              <div
-                className="feat feat-wide"
-                style={{ background: "linear-gradient(120deg, rgba(22,163,74,0.06), var(--bg-card))" }}
-              >
+              <div className="feat"><div className="feat-icon"><QRIconGreen /></div><div className="feat-title">QR Attendance Scanning</div><div className="feat-desc">Fast, accurate scanning on any smartphone — no dedicated scanners needed. Works on budget Android phones too.</div></div>
+              <div className="feat"><div className="feat-icon"><ChatIcon /></div><div className="feat-title">Instant SMS Alerts</div><div className="feat-desc">Parents receive an SMS the moment their child is scanned — on registration, on time arrivals, and late arrivals.</div></div>
+              <div className="feat"><div className="feat-icon"><MonitorIcon /></div><div className="feat-title">Real-Time Dashboard</div><div className="feat-desc">Live counts of present, absent, and late students. Updated every second.</div></div>
+              <div className="feat"><div className="feat-icon"><ShieldIcon /></div><div className="feat-title">Role-Based Access</div><div className="feat-desc">Admins, teachers, gatemen, and parents each have their own controlled view.</div></div>
+              <div className="feat feat-wide" style={{ background: "linear-gradient(120deg, rgba(22,163,74,0.06), var(--bg-card))" }}>
                 <div className="feat-wide-inner">
-                  <div>
-                    <div className="feat-icon"><UsersIcon /></div>
-                    <div className="feat-title">Class Management &amp; Teacher Logins</div>
-                    <div className="feat-desc">Assign teachers to classes so they only see their students. Each class gets its own attendance report — clean, private, contextual.</div>
-                  </div>
-                  <div>
-                    <div className="feat-icon"><ClockIcon /></div>
-                    <div className="feat-title">Late Reason Tracking &amp; Parent Reports</div>
-                    <div className="feat-desc">When a student arrives late, teachers log the reason. Parents see it too — end-of-week reports go straight to their phone.</div>
-                  </div>
+                  <div><div className="feat-icon"><UsersIcon /></div><div className="feat-title">Suspend & Remove Students or Staff</div><div className="feat-desc">Admins can suspend, reactivate, or permanently remove students and staff. Suspended users are signed out immediately and cannot log in.</div></div>
+                  <div><div className="feat-icon"><ClockIcon /></div><div className="feat-title">Late Tracking & Parent Portal</div><div className="feat-desc">Parents log in with their phone number to see their child's full attendance history — no password needed.</div></div>
                 </div>
               </div>
             </div>
@@ -934,34 +720,21 @@ export default function LandingPage() {
           <div className="container">
             <span className="section-tag">Pricing</span>
             <h2 className="section-title">Simple, honest pricing.</h2>
-            <p className="section-sub">
-              Flat annual plans — no per-student fees, no surprise charges. Built for Nigerian school budgets.
-            </p>
+            <p className="section-sub">Flat annual plans — no per-student fees, no surprise charges.</p>
             <div className="pricing-grid">
-              {plans.map((plan) => (
+              {plans.map(plan => (
                 <div className={`plan${plan.featured ? " featured" : ""}`} key={plan.name}>
                   {plan.badge && <div className="plan-badge">{plan.badge}</div>}
                   <div className="plan-name">{plan.name}</div>
                   <div className="plan-price">{plan.price}</div>
                   <div className="plan-period">{plan.period}</div>
                   <div className="plan-divider" />
-                  <ul className="plan-features">
-                    {plan.features.map((f) => (
-                      <li key={f}>{f}</li>
-                    ))}
-                  </ul>
-                  <a
-                    href={`mailto:attendyofficial@gmail.com?subject=${encodeURIComponent(plan.subject)}`}
-                    className={`plan-btn ${plan.btnClass}`}
-                  >
-                    Get started
-                  </a>
+                  <ul className="plan-features">{plan.features.map(f => <li key={f}>{f}</li>)}</ul>
+                  <a href={`mailto:attendyofficial@gmail.com?subject=${encodeURIComponent(plan.subject)}`} className={`plan-btn ${plan.btnClass}`}>Get started</a>
                 </div>
               ))}
             </div>
-            <p className="pricing-note">
-              All plans include onboarding &amp; setup support. SMS charges billed separately via Termii.
-            </p>
+            <p className="pricing-note">All plans include onboarding & setup support. SMS charges billed separately via Termii.</p>
           </div>
         </section>
 
@@ -970,72 +743,42 @@ export default function LandingPage() {
           <div className="container school-login-card">
             <span className="section-tag">Already a customer?</span>
             <h2 className="section-title">Log in to your school</h2>
-            <p className="section-sub">
-              Enter your school's unique link to access your dashboard. Your link was given to you when you signed up.
-            </p>
+            <p className="section-sub">Enter your school's unique link to access your dashboard.</p>
             <form onSubmit={handleSchoolLogin} className="school-login-grid">
               <label className="school-login-field">
                 <span>attendy.ng/</span>
-                <input
-                  type="text"
-                  value={slug}
-                  onChange={(e) => {
-                    setSlug(e.target.value);
-                    setSlugError("");
-                  }}
-                  placeholder="greenfield-academy"
-                />
+                <input type="text" value={slug} onChange={e => { setSlug(e.target.value); setSlugError(""); }} placeholder="greenfield-academy" />
               </label>
               {slugError && <p style={{ color: '#f87171', fontSize: '0.875rem' }}>{slugError}</p>}
-              <p className="school-login-help">
-                Not sure of your link? Contact your school admin or email{' '}
-                <a href="mailto:attendyofficial@gmail.com">attendyofficial@gmail.com</a>
-              </p>
-              <button type="submit" className="btn-primary" style={{ width: '100%' }}>
-                Go to my school
-              </button>
+              <p className="school-login-help">Not sure of your link? Contact your school admin or email <a href="mailto:attendyofficial@gmail.com">attendyofficial@gmail.com</a></p>
+              <button type="submit" className="btn-primary" style={{ width: '100%' }}>Go to my school</button>
             </form>
-            <p className="school-login-footer">
-              Each school has a unique link e.g. <span style={{ color: '#d1d5db' }}>attendy.ng/kings-college-lagos</span>
-            </p>
+            <p className="school-login-footer">Each school has a unique link e.g. <span style={{ color: '#d1d5db' }}>attendy.ng/kings-college-lagos</span></p>
           </div>
         </section>
 
-        {/* WHO IT'S FOR */}
+        {/* WHO */}
         <section className="who section">
           <div className="container">
             <span className="section-tag">Built for</span>
             <h2 className="section-title">Made for every Nigerian school.</h2>
-            <div className="who-tags">
-              {schoolTypes.map((s) => (
-                <span className="who-tag" key={s}>{s}</span>
-              ))}
-            </div>
+            <div className="who-tags">{schoolTypes.map(s => <span className="who-tag" key={s}>{s}</span>)}</div>
           </div>
         </section>
 
         {/* CTA */}
         <section className="cta-section section">
           <div className="cta-glow" />
-          <div className="cta-grid-line" />
           <h2>Real-time visibility for every school gate in Nigeria.</h2>
           <p>Setup takes less than a day. No hardware. No IT department needed.</p>
-          <a
-            href="mailto:attendyofficial@gmail.com?subject=I want to get started with Attendy"
-            className="btn-primary"
-            style={{ display: "inline-flex" }}
-          >
-            Start using Attendy <ArrowIcon />
-          </a>
+          <a href="mailto:attendyofficial@gmail.com?subject=I want to get started with Attendy" className="btn-primary" style={{ display: "inline-flex" }}>Start using Attendy <ArrowIcon /></a>
+          <div style={{ marginTop: 20, position: 'relative', zIndex: 1 }}>
+            <a href={ANDROID_APK_URL} target="_blank" rel="noopener noreferrer" className="btn-ghost" style={{ display: 'inline-flex' }}>
+              <PhoneIcon /> Download Android App
+            </a>
+          </div>
           <div className="cta-contacts">
-            <a href="mailto:attendyofficial@gmail.com" className="contact-link">
-              <MailIcon />
-              attendyofficial@gmail.com
-            </a>
-            <a href="mailto:hashcody63@gmail.com" className="contact-link">
-              <CodeIcon />
-              hashcody63@gmail.com · developer
-            </a>
+            <a href="mailto:attendyofficial@gmail.com" className="contact-link"><MailIcon />attendyofficial@gmail.com</a>
           </div>
         </section>
 
@@ -1045,10 +788,8 @@ export default function LandingPage() {
             <a href="#" className="logo" style={{ fontSize: 15 }}>
               <div className="logo-icon" style={{ width: 26, height: 26 }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" width="13" height="13">
-                  <rect x="3" y="3" width="7" height="7" rx="1" />
-                  <rect x="14" y="3" width="7" height="7" rx="1" />
-                  <rect x="3" y="14" width="7" height="7" rx="1" />
-                  <rect x="17" y="17" width="4" height="4" rx="0.5" />
+                  <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="17" y="17" width="4" height="4" rx="0.5" />
                 </svg>
               </div>
               Attendy
@@ -1056,11 +797,10 @@ export default function LandingPage() {
             <p className="footer-copy">© {new Date().getFullYear()} Attendy. Built for Nigerian schools.</p>
             <div className="footer-links">
               <a href="mailto:attendyofficial@gmail.com">Support</a>
-              <a href="mailto:hashcody63@gmail.com">Developer</a>
+              <a href={ANDROID_APK_URL} target="_blank" rel="noopener noreferrer">Android App</a>
             </div>
           </div>
         </footer>
-
       </div>
     </>
   );

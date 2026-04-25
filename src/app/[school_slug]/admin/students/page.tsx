@@ -12,7 +12,6 @@ export default async function StudentsPage({
   const { school_slug } = await params
   const supabase = await createClient()
 
-  // Verify school exists and get its ID
   const { data: school } = await supabase
     .from('schools')
     .select('id, name')
@@ -21,12 +20,12 @@ export default async function StudentsPage({
 
   if (!school) notFound()
 
-  // CRITICAL: filter by school_id — never return students from other schools
+  // Include ALL students (active + inactive) so admin can re-activate
   const { data: students } = await supabase
     .from('students')
     .select('*')
     .eq('school_id', school.id)
-    .eq('is_active', true)
+    .order('is_active', { ascending: false }) // active first
     .order('class', { ascending: true })
     .order('full_name', { ascending: true })
 
@@ -35,7 +34,11 @@ export default async function StudentsPage({
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-white text-2xl font-bold">Students</h1>
-          <p className="text-gray-400 text-sm">{students?.length ?? 0} registered</p>
+          <p className="text-gray-400 text-sm">
+            {students?.filter(s => s.is_active).length ?? 0} active
+            {(students?.filter(s => !s.is_active).length ?? 0) > 0 &&
+              ` · ${students?.filter(s => !s.is_active).length} inactive`}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <Link
@@ -54,7 +57,11 @@ export default async function StudentsPage({
           </Link>
         </div>
       </div>
-      <StudentList students={students ?? []} schoolSlug={school_slug} />
+      <StudentList
+        students={students ?? []}
+        schoolSlug={school_slug}
+        schoolId={school.id}
+      />
     </div>
   )
 }

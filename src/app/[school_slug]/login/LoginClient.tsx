@@ -13,7 +13,7 @@ interface LoginClientProps {
 }
 
 const URL_ERROR_MESSAGES: Record<string, string> = {
-  oauth_error:     'Google sign-in failed. Please try again.',
+  oauth_error:     'Sign-in failed. Please try again.',
   no_code:         'Authentication callback missing code. Please try again.',
   exchange_failed: 'Session exchange failed. Please try again.',
   no_user:         'No user found after sign-in. Please try again.',
@@ -89,16 +89,6 @@ export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginC
     router.push(destination)
   }
 
-  async function handleGoogleLogin() {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/${schoolSlug}/auth/callback`,
-      },
-    })
-    if (error) toast.error('Google sign-in failed. Please try again.')
-  }
-
   async function handleForgotPassword() {
     if (!forgotEmail.trim()) {
       toast.error('Please enter your email address.')
@@ -107,16 +97,15 @@ export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginC
     setForgotLoading(true)
 
     try {
-      const res = await fetch('/api/reset-password', {
+      await fetch('/api/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: forgotEmail.trim(), school_slug: schoolSlug }),
       })
-
       // Always show success to avoid email enumeration
       setForgotSent(true)
     } catch {
-      setForgotSent(true) // still show success
+      setForgotSent(true)
     } finally {
       setForgotLoading(false)
     }
@@ -346,7 +335,7 @@ export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginC
                 className="text-[11px] text-green-600 hover:text-green-700
                   dark:text-green-500 dark:hover:text-green-400 transition-colors"
                 onClick={() => {
-                  setForgotEmail(email) // pre-fill email if they typed it
+                  setForgotEmail(email)
                   setShowForgot(true)
                 }}
               >
@@ -414,42 +403,19 @@ export default function LoginClient({ schoolSlug, schoolName, urlError }: LoginC
             )}
           </button>
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 my-5">
-            <hr className="flex-1 border-zinc-200 dark:border-zinc-700" />
-            <span className="text-[11px] text-zinc-400 dark:text-zinc-600">or</span>
-            <hr className="flex-1 border-zinc-200 dark:border-zinc-700" />
-          </div>
-
-          {/* Google SSO */}
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            className="w-full flex items-center justify-center gap-2.5 py-2.5
-              text-sm text-zinc-600 dark:text-zinc-400
-              border border-zinc-200 dark:border-zinc-700
-              bg-zinc-50 dark:bg-zinc-800
-              hover:bg-zinc-100 dark:hover:bg-zinc-700/60
-              rounded-lg transition-all"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <path d="M22.5 12.24c0-.78-.07-1.53-.2-2.26H12v4.28h5.92c-.26
-                1.4-1.1 2.6-2.36 3.4v2.8h3.82c2.24-2.06 3.52-5.1 3.52-8.22z"
-                fill="#4285F4" />
-              <path d="M12 23c3.24 0 5.96-1.08 7.95-2.94l-3.82-2.8c-1.06.72-2.42
-                1.15-4.13 1.15-3.18 0-5.88-2.14-6.84-5.02H1.86v3.15C3.83 20.8 7.66
-                23 12 23z" fill="#34A853" />
-              <path d="M5.16 13.42c-.24-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27V5.73H1.86A11.97
-                11.97 0 000 11.15c0 1.9.46 3.7 1.3 5.25l3.86-2.98z" fill="#FBBC05" />
-              <path d="M12 4.56c1.76 0 3.34.61 4.58 1.8l3.44-3.44C17.96 1.04 15.24 0 12
-                0 7.66 0 3.83 2.2 1.86 5.73l3.86 3.17C6.12 6.7 8.82 4.56 12 4.56z"
-                fill="#EA4335" />
-            </svg>
-            Continue with Google
-          </button>
+          {/* Parent portal hint */}
+          <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-600 mt-4">
+            Parent?{' '}
+            <a
+              href={`/${schoolSlug}/parent/login`}
+              className="text-green-600 dark:text-green-500 hover:underline"
+            >
+              Use the parent portal →
+            </a>
+          </p>
 
           {/* New staff hint */}
-          <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-600 mt-4">
+          <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-600 mt-2">
             New staff?{' '}
             <button
               onClick={() => { setForgotEmail(email); setShowForgot(true) }}
