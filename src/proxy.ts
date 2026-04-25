@@ -55,7 +55,7 @@ export async function proxy(request: NextRequest) {
     '/auth/callback',
     '/auth/confirm',
     '/auth/set-password',
-     '/parent/login',   // ← add this
+    '/parent/login',   // Parent login uses custom JWT, not Supabase
     '/auth/verify-otp',   // Staff invite OTP verification — ALWAYS public
   ]
 
@@ -64,6 +64,15 @@ export async function proxy(request: NextRequest) {
   )
 
   if (isPublicAuthPath) {
+    return proxyResponse
+  }
+
+  // ── Parent routes use custom JWT in localStorage (client-side) ──
+  // Middleware should not enforce Supabase auth for parent routes
+  const isParentRoute = pathname.startsWith(`/${slug}/parent/`)
+  if (isParentRoute) {
+    // Parent authentication is handled client-side via localStorage JWT token
+    // The API endpoints validate the token when called
     return proxyResponse
   }
 
