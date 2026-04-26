@@ -11,11 +11,36 @@ const PARENT_JWT_SECRET = new TextEncoder().encode(
   process.env.PARENT_JWT_SECRET ?? 'parent-jwt-secret-attendy-change-in-prod-32chars!!'
 )
 
+// Simple in-memory rate limit: max 5 attempts per phone per 15 min
+const attemptMap = new Map<string, { count: number; resetAt: number }>()
+
+function checkRateLimit(key: string): boolean {
+  const now = Date.now()
+  const entry = attemptMap.get(key)
+  if (!entry || now > entry.resetAt) {
+    attemptMap.set(key, { count: 1, resetAt: now + 15 * 60 * 1000 })
+    return true
+  }
+  if (entry.count >= 5) return false
+  entry.count++
+  return true
+}
+
 export async function POST(req: NextRequest) {
   const { phone, school_slug } = await req.json()
 
   if (!phone || !school_slug) {
     return NextResponse.json({ message: 'Phone number and school required' }, { status: 400 })
+  }
+
+  // Rate limit by IP + phone
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0] ?? 'unknown'
+  const rateLimitKey = `${ip}:${phone}`
+  if (!checkRateLimit(rateLimitKey)) {
+    return NextResponse.json(
+      { message: 'Too many attempts. Please wait 15 minutes before trying again.' },
+      { status: 429 }
+    )
   }
 
   // Validate the school
@@ -30,16 +55,18 @@ export async function POST(req: NextRequest) {
   }
 
   // Normalise phone variants for matching
-  // Parent phone in DB could be stored as 0812... or 234812... or +234812...
   const variants: string[] = [phone]
   if (phone.startsWith('234')) {
-    variants.push('0' + phone.slice(3))   // 234812... → 0812...
-    variants.push('+' + phone)             // 234812... → +234812...
+    variants.push('0' + phone.slice(3))
+    variants.push('+' + phone)
   } else if (phone.startsWith('0')) {
-    variants.push('234' + phone.slice(1)) // 0812... → 234812...
+    variants.push('234' + phone.slice(1))
+    variants.push('+234' + phone.slice(1))
+  } else if (phone.startsWith('+234')) {
+    variants.push('0' + phone.slice(4))
+    variants.push(phone.slice(1)) // without +
   }
 
-  // Find students linked to this phone number in this school
   const { data: students } = await supabaseAdmin
     .from('students')
     .select('id, full_name, class, parent_name, parent_phone')
@@ -48,13 +75,14 @@ export async function POST(req: NextRequest) {
     .in('parent_phone', variants)
 
   if (!students || students.length === 0) {
+    // Consistent response time to prevent timing attacks
+    await new Promise(r => setTimeout(r, 300))
     return NextResponse.json(
       { message: 'No student found with this phone number at this school. Contact your school admin.' },
       { status: 404 }
     )
   }
 
-  // Issue a lightweight JWT (no Supabase auth needed for parents)
   const token = await new SignJWT({
     phone,
     school_id: school.id,
@@ -64,7 +92,7 @@ export async function POST(req: NextRequest) {
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('30d') // parents stay logged in for 30 days
+    .setExpirationTime('30d')
     .sign(PARENT_JWT_SECRET)
 
   return NextResponse.json({

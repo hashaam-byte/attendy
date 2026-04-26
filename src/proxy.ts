@@ -49,17 +49,16 @@ export async function proxy(request: NextRequest) {
   if (nonSchoolSlugs.includes(slug)) return proxyResponse
 
   // ── Auth flow pages that are ALWAYS public — no session check needed ──
-  // These must be accessible without being logged in
   const publicAuthPaths = [
     '/login',
     '/auth/callback',
     '/auth/confirm',
-    '/auth/set-password',
-    '/parent/login',   // Parent login uses custom JWT, not Supabase
-    '/auth/verify-otp',   // Staff invite OTP verification — ALWAYS public
+    '/auth/set-password',   // FIXED: password reset landing page
+    '/auth/verify-otp',
+    '/parent/login',
   ]
 
-  const isPublicAuthPath = publicAuthPaths.some(p => 
+  const isPublicAuthPath = publicAuthPaths.some(p =>
     pathname === `/${slug}${p}` || pathname.startsWith(`/${slug}${p}`)
   )
 
@@ -67,12 +66,9 @@ export async function proxy(request: NextRequest) {
     return proxyResponse
   }
 
-  // ── Parent routes use custom JWT in localStorage (client-side) ──
-  // Middleware should not enforce Supabase auth for parent routes
+  // ── Parent routes use custom JWT (client-side) ──
   const isParentRoute = pathname.startsWith(`/${slug}/parent/`)
   if (isParentRoute) {
-    // Parent authentication is handled client-side via localStorage JWT token
-    // The API endpoints validate the token when called
     return proxyResponse
   }
 
@@ -121,9 +117,7 @@ export async function proxy(request: NextRequest) {
 
     // Deactivated user account
     if (profile && !profile.is_active) {
-      try {
-        await supabase.auth.signOut()
-      } catch {}
+      try { await supabase.auth.signOut() } catch {}
       return NextResponse.redirect(
         new URL(`/${slug}/login?error=deactivated`, request.url)
       )
@@ -131,9 +125,7 @@ export async function proxy(request: NextRequest) {
 
     // User belongs to a different school
     if (schoolRecord && profile?.school_id !== schoolRecord.id) {
-      try {
-        await supabase.auth.signOut()
-      } catch {}
+      try { await supabase.auth.signOut() } catch {}
       return NextResponse.redirect(new URL(`/${slug}/login`, request.url))
     }
 

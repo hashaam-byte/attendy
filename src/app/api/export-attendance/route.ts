@@ -7,7 +7,6 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
-  // Get admin profile + school
   const { data: profile } = await supabase
     .from('user_profiles')
     .select('role, school_id')
@@ -20,9 +19,18 @@ export async function GET(req: NextRequest) {
 
   const schoolId = profile.school_id
   const url = new URL(req.url)
-  const dateFrom = url.searchParams.get('from') // yyyy-MM-dd
-  const dateTo = url.searchParams.get('to')     // yyyy-MM-dd
+  const dateFrom = url.searchParams.get('from')
+  const dateTo = url.searchParams.get('to')
   const classFilter = url.searchParams.get('class') ?? ''
+
+  // Validate date params to prevent injection
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/
+  if (dateFrom && !dateRegex.test(dateFrom)) {
+    return NextResponse.json({ message: 'Invalid date format' }, { status: 400 })
+  }
+  if (dateTo && !dateRegex.test(dateTo)) {
+    return NextResponse.json({ message: 'Invalid date format' }, { status: 400 })
+  }
 
   let query = supabase
     .from('attendance_logs')
@@ -46,7 +54,6 @@ export async function GET(req: NextRequest) {
     ? (logs ?? []).filter((l: any) => l.students?.class === classFilter)
     : (logs ?? [])
 
-  // Build CSV
   const csvRows = [
     ['Date', 'Time', 'Student Name', 'Class', 'Status', 'Late Reason', 'Scanned By', 'Parent Phone'],
     ...filtered.map((l: any) => [
@@ -66,7 +73,9 @@ export async function GET(req: NextRequest) {
       .join(',')
   ).join('\r\n')
 
-  const filename = `attendance_${dateFrom ?? 'all'}_to_${dateTo ?? 'all'}.csv`
+  const safeFrom = dateFrom ?? 'all'
+  const safeTo = dateTo ?? 'all'
+  const filename = `attendance_${safeFrom}_to_${safeTo}.csv`
 
   return new NextResponse(csv, {
     headers: {
