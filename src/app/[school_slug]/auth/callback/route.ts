@@ -1,4 +1,3 @@
-
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse, type NextRequest } from 'next/server'
@@ -8,33 +7,46 @@ export async function GET(
   { params }: { params: Promise<{ school_slug: string }> }
 ) {
   const { school_slug } = await params
-  const requestUrl = new URL(request.url)
-  const code = requestUrl.searchParams.get('code')
-  const type = requestUrl.searchParams.get('type')
-  const error = requestUrl.searchParams.get('error')
+  const { searchParams } = new URL(request.url)
 
-  // OAuth provider returned an error
+  const code = searchParams.get('code')
+  const token_hash = searchParams.get('token_hash')
+  const type = searchParams.get('type')
+  const error = searchParams.get('error')
+
+  // OAuth/Supabase returned an error
   if (error) {
     return NextResponse.redirect(
       new URL(`/${school_slug}/login?error=oauth_error`, request.url)
     )
   }
 
+  // token_hash flow — forward to /auth/confirm which handles verifyOtp
+  if (token_hash && type) {
+    const confirmUrl = new URL(`/${school_slug}/auth/confirm`, request.url)
+    confirmUrl.searchParams.set('token_hash', token_hash)
+    confirmUrl.searchParams.set('type', type)
+    if (type === 'recovery') {
+      confirmUrl.searchParams.set('next', `/${school_slug}/auth/set-password`)
+    }
+    return NextResponse.redirect(confirmUrl)
+  }
+
+  // No code and no token_hash
   if (!code) {
     return NextResponse.redirect(
       new URL(`/${school_slug}/login?error=no_code`, request.url)
     )
   }
 
+  // PKCE code flow
   const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
+        getAll() { return cookieStore.getAll() },
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
@@ -54,17 +66,15 @@ export async function GET(
     )
   }
 
-  // ── Recovery flow: redirect to set-password page ──────────────
+  // Recovery type via code flow → set password
   if (type === 'recovery') {
     return NextResponse.redirect(
       new URL(`/${school_slug}/auth/set-password`, request.url)
     )
   }
 
-  // ── Normal OAuth / magic link flow ───────────────────────────
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // Normal flow (magic link invite, OAuth) → route by role
+  const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
     return NextResponse.redirect(
@@ -79,10 +89,10 @@ export async function GET(
     .single()
 
   const roleRoutes: Record<string, string> = {
-    admin: `/${school_slug}/admin/dashboard`,
+    admin:   `/${school_slug}/admin/dashboard`,
     teacher: `/${school_slug}/teacher/scan`,
     gateman: `/${school_slug}/gateman/scan`,
-    parent: `/${school_slug}/parent/my-child`,
+    parent:  `/${school_slug}/parent/my-child`,
   }
 
   const destination = profile?.role

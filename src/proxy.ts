@@ -29,50 +29,41 @@ export async function proxy(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
-  // Skip head-admin, static, API routes — they handle their own auth
-  const skipPrefixes = ['/head-admin', '/_next', '/favicon', '/api', '/setup', '/status', '/termii-test']
-  if (skipPrefixes.some(p => pathname.startsWith(p))) {
-    return proxyResponse
-  }
-
-  // Skip root and status page
+  const skipPrefixes = [
+    '/head-admin', '/_next', '/favicon', '/api', '/setup', '/status', '/termii-test',
+  ]
+  if (skipPrefixes.some(p => pathname.startsWith(p))) return proxyResponse
   if (pathname === '/' || pathname === '/status') return proxyResponse
 
-  // Extract school slug — first path segment
   const slugMatch = pathname.match(/^\/([^/]+)(?:\/|$)/)
   const slug = slugMatch?.[1]
-
   if (!slug) return proxyResponse
 
-  // Skip known non-school top-level routes
-  const nonSchoolSlugs = ['_next', 'favicon', 'api', 'head-admin', 'setup', 'status', 'termii-test']
+  const nonSchoolSlugs = [
+    '_next', 'favicon', 'api', 'head-admin', 'setup', 'status', 'termii-test',
+  ]
   if (nonSchoolSlugs.includes(slug)) return proxyResponse
 
-  // ── Auth flow pages that are ALWAYS public — no session check needed ──
+  // ── Public auth paths — always accessible, no session required ──
   const publicAuthPaths = [
     '/login',
     '/auth/callback',
-    '/auth/confirm',
-    '/auth/set-password',   // FIXED: password reset landing page
-    '/auth/verify-otp',
+    '/auth/confirm',        // token_hash verification for reset/invite links
+    '/auth/set-password',  // password set/reset form (session set by confirm route)
+    '/auth/verify-otp',    // staff OTP verification
     '/parent/login',
   ]
 
-  const isPublicAuthPath = publicAuthPaths.some(p =>
-    pathname === `/${slug}${p}` || pathname.startsWith(`/${slug}${p}`)
+  const isPublicAuthPath = publicAuthPaths.some(
+    p => pathname === `/${slug}${p}` || pathname.startsWith(`/${slug}${p}`)
   )
+  if (isPublicAuthPath) return proxyResponse
 
-  if (isPublicAuthPath) {
-    return proxyResponse
-  }
-
-  // ── Parent routes use custom JWT (client-side) ──
+  // Parent routes use custom JWT (client-side localStorage) — skip Supabase check
   const isParentRoute = pathname.startsWith(`/${slug}/parent/`)
-  if (isParentRoute) {
-    return proxyResponse
-  }
+  if (isParentRoute) return proxyResponse
 
-  // Wrap all auth logic in try/catch
+  // ── Session check ──
   let user: any = null
   try {
     const { data } = await supabase.auth.getUser()
@@ -84,9 +75,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL(`/${slug}/login`, request.url))
   }
 
-  const isLoginPage = pathname.endsWith('/login') || pathname === `/${slug}/login`
+  const isLoginPage =
+    pathname.endsWith('/login') || pathname === `/${slug}/login`
 
-  // Not logged in → redirect to school login
   if (!user && !isLoginPage) {
     return NextResponse.redirect(new URL(`/${slug}/login`, request.url))
   }
@@ -115,7 +106,6 @@ export async function proxy(request: NextRequest) {
       return proxyResponse
     }
 
-    // Deactivated user account
     if (profile && !profile.is_active) {
       try { await supabase.auth.signOut() } catch {}
       return NextResponse.redirect(
@@ -123,7 +113,6 @@ export async function proxy(request: NextRequest) {
       )
     }
 
-    // User belongs to a different school
     if (schoolRecord && profile?.school_id !== schoolRecord.id) {
       try { await supabase.auth.signOut() } catch {}
       return NextResponse.redirect(new URL(`/${slug}/login`, request.url))
@@ -138,23 +127,22 @@ export async function proxy(request: NextRequest) {
       parent:  `/${slug}/parent/my-child`,
     }
 
-    // Already logged in and on login page → send to role home
     if (isLoginPage && role) {
       return NextResponse.redirect(new URL(roleHome[role], request.url))
     }
 
-    // Role enforcement — block wrong role section
     if (role && !isLoginPage) {
       const rolePrefixes = ['admin', 'teacher', 'gateman', 'parent']
-      const matchedPrefix = rolePrefixes.find(r =>
-        pathname.startsWith(`/${slug}/${r}/`) || pathname === `/${slug}/${r}`
+      const matchedPrefix = rolePrefixes.find(
+        r =>
+          pathname.startsWith(`/${slug}/${r}/`) ||
+          pathname === `/${slug}/${r}`
       )
       if (matchedPrefix && matchedPrefix !== role) {
         return NextResponse.redirect(new URL(roleHome[role], request.url))
       }
     }
 
-    // Orphaned auth account (no profile) → redirect to login
     if (!profile && !isLoginPage) {
       return NextResponse.redirect(new URL(`/${slug}/login`, request.url))
     }
