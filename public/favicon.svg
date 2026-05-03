@@ -1,0 +1,36 @@
+<!-- Primary (green bg) — use for app icon, favicon, PWA manifest -->
+<svg width="512" height="512" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- App icon background — apply via wrapping <div> with border-radius or use as-is -->
+  <rect width="72" height="72" rx="16" fill="#16a34a"/>
+
+  <!-- Shield -->
+  <path d="M36 8 L58 17 L58 36 C58 50 47 61 36 65 C25 61 14 50 14 36 L14 17 Z"
+    fill="rgba(255,255,255,0.13)" stroke="rgba(255,255,255,0.25)" stroke-width="1.2"/>
+
+  <!-- QR corner — top left -->
+  <rect x="24" y="23" width="8" height="8" rx="2" fill="white"/>
+  <rect x="26" y="25" width="4" height="4" rx="1" fill="#16a34a"/>
+
+  <!-- QR corner — top right -->
+  <rect x="40" y="23" width="8" height="8" rx="2" fill="white"/>
+  <rect x="42" y="25" width="4" height="4" rx="1" fill="#16a34a"/>
+
+  <!-- QR corner — bottom left -->
+  <rect x="24" y="38" width="8" height="8" rx="2" fill="white"/>
+  <rect x="26" y="40" width="4" height="4" rx="1" fill="#16a34a"/>
+
+  <!-- Checkmark — bottom right (replaces 4th QR block = "scanned/verified") -->
+  <path d="M41 42 L44 46 L51 38"
+    stroke="white" stroke-width="2.8"
+    stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- QR dot scatter — centre column -->
+  <rect x="35" y="23" width="2.5" height="2.5" rx=".6" fill="rgba(255,255,255,0.7)"/>
+  <rect x="35" y="27" width="2.5" height="2.5" rx=".6" fill="rgba(255,255,255,0.5)"/>
+  <rect x="35" y="31" width="2.5" height="2.5" rx=".6" fill="rgba(255,255,255,0.7)"/>
+
+  <!-- QR dot scatter — centre row -->
+  <rect x="24" y="34" width="2.5" height="2.5" rx=".6" fill="rgba(255,255,255,0.5)"/>
+  <rect x="28" y="34" width="2.5" height="2.5" rx=".6" fill="rgba(255,255,255,0.7)"/>
+  <rect x="32" y="34" width="2.5" height="2.5" rx=".6" fill="rgba(255,255,255,0.5)"/>
+</svg>
