@@ -1,17 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   CheckCircle, Clock, XCircle, AlertCircle, Loader2,
   ScanLine, Wifi, WifiOff, Users, LogOut,
 } from "lucide-react";
-import { cn, formatTime, getInitials } from "@/lib/utils";
+import { cn, formatTime } from "@/lib/utils";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
-// Dynamically load QR scanner to avoid SSR issues
 const Html5QrScanner = dynamic(() => import("@/components/scanner/qr-scanner"), {
   ssr: false,
   loading: () => (
@@ -40,9 +39,21 @@ type CachedMember = {
   parent_phone: string | null;
   organisation_id: string;
   is_active: boolean;
+  qr_code: string;
 };
 
-// IndexedDB helpers for offline queueing
+type QueuedScan = {
+  organisation_id: string;
+  member_id: string;
+  scan_type: "entry";
+  status: "present" | "late";
+  late_reason: string | null;
+  device_id: string;
+  scanned_at: string;
+  queued_at: string;
+};
+
+// IndexedDB helpers
 const DB_NAME = "attendy_offline";
 const STORE_NAME = "scan_queue";
 
@@ -55,22 +66,26 @@ async function openDB(): Promise<IDBDatabase> {
   });
 }
 
-async function queueScan(scan: any) {
+async function queueScan(scan: QueuedScan) {
   const db = await openDB();
   const tx = db.transaction(STORE_NAME, "readwrite");
-  tx.objectStore(STORE_NAME).add({ ...scan, queued_at: new Date().toISOString() });
+  tx.objectStore(STORE_NAME).add(scan);
 }
 
-async function getQueuedScans(): Promise<{ key: IDBValidKey; value: any }[]> {
+async function getQueuedScans(): Promise<{ key: IDBValidKey; value: QueuedScan }[]> {
   const db = await openDB();
   return new Promise((resolve) => {
     const tx = db.transaction(STORE_NAME, "readonly");
     const store = tx.objectStore(STORE_NAME);
-    const results: { key: IDBValidKey; value: any }[] = [];
-    store.openCursor().onsuccess = (e: any) => {
-      const cursor = e.target.result;
-      if (cursor) { results.push({ key: cursor.key, value: cursor.value }); cursor.continue(); }
-      else resolve(results);
+    const results: { key: IDBValidKey; value: QueuedScan }[] = [];
+    store.openCursor().onsuccess = (e: Event) => {
+      const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+      if (cursor) {
+        results.push({ key: cursor.key, value: cursor.value as QueuedScan });
+        cursor.continue();
+      } else {
+        resolve(results);
+      }
     };
   });
 }
@@ -109,7 +124,7 @@ export function ScannerClient({
   const [currentTime, setCurrentTime] = useState("");
   const lastScannedRef = useRef<string>("");
   const lastScannedTimeRef = useRef<number>(0);
-  const clearTimerRef = useRef<NodeJS.Timeout>();
+  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Live clock
   useEffect(() => {
@@ -130,6 +145,7 @@ export function ScannerClient({
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Cache member list on load
@@ -137,16 +153,16 @@ export function ScannerClient({
     async function loadMembers() {
       const { data } = await supabase
         .from("members")
-        .select("id, full_name, class_name, parent_phone, organisation_id, is_active")
+        .select("id, full_name, class_name, parent_phone, organisation_id, is_active, qr_code")
         .eq("organisation_id", orgId)
         .eq("is_active", true)
         .eq("member_type", "student");
-      if (data) setCachedMembers(data);
+      if (data) setCachedMembers(data as CachedMember[]);
     }
     loadMembers();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
-  // Check queued scans count
   async function updateQueueCount() {
     const q = await getQueuedScans();
     setQueuedCount(q.length);
@@ -168,7 +184,9 @@ export function ScannerClient({
           scanned_at: value.scanned_at,
         });
         await deleteQueuedScan(key);
-      } catch {}
+      } catch {
+        // Continue trying other queued items
+      }
     }
     updateQueueCount();
   }
@@ -180,7 +198,6 @@ export function ScannerClient({
   async function handleScan(qrCode: string) {
     if (processing) return;
 
-    // Debounce — ignore same QR within 3s
     const now = Date.now();
     if (qrCode === lastScannedRef.current && now - lastScannedTimeRef.current < 3000) return;
     lastScannedRef.current = qrCode;
@@ -191,17 +208,17 @@ export function ScannerClient({
     setScanResult(null);
 
     try {
-      // Find member — from cache first (works offline)
-      let member = cachedMembers.find((m) => m.qr_code === qrCode) as any;
+      // Find member from cache first (works offline)
+      let member: CachedMember | null = cachedMembers.find((m) => m.qr_code === qrCode) ?? null;
 
       if (!member && isOnline) {
         const { data } = await supabase
           .from("members")
-          .select("id, full_name, class_name, parent_phone, organisation_id, is_active")
+          .select("id, full_name, class_name, parent_phone, organisation_id, is_active, qr_code")
           .eq("qr_code", qrCode)
           .eq("organisation_id", orgId)
           .single();
-        member = data;
+        member = data as CachedMember | null;
       }
 
       if (!member) {
@@ -212,7 +229,13 @@ export function ScannerClient({
       }
 
       if (!member.is_active) {
-        setScanResult({ type: "error", name: member.full_name, className: member.class_name ?? undefined, time: new Date().toLocaleTimeString(), message: "Student is inactive" });
+        setScanResult({
+          type: "error",
+          name: member.full_name,
+          className: member.class_name ?? undefined,
+          time: new Date().toLocaleTimeString(),
+          message: "Student is inactive",
+        });
         setProcessing(false);
         clearResult();
         return;
@@ -220,7 +243,6 @@ export function ScannerClient({
 
       const today = new Date().toISOString().split("T")[0];
 
-      // Check duplicate (only if online)
       if (isOnline) {
         const { data: existing } = await supabase
           .from("attendance_logs")
@@ -245,35 +267,21 @@ export function ScannerClient({
         }
       }
 
-      // Check if late — get org settings
-      let isLate = false;
-      if (isOnline) {
-        const { data: org } = await supabase
-          .from("organisations")
-          .select("timezone")
-          .eq("id", orgId)
-          .single();
-
-        // Simple late check: after 8:00 AM by default
-        const now2 = new Date();
-        const cutoff = new Date(now2);
-        cutoff.setHours(8, 0, 0, 0); // default 8AM cutoff — could come from settings
-        isLate = now2 > cutoff;
-      }
-
-      const scannedAt = new Date().toISOString();
-      const status: "present" | "late" = isLate ? "late" : "present";
+      // Late check: after 8:00 AM
+      const nowDate = new Date();
+      const cutoff = new Date(nowDate);
+      cutoff.setHours(8, 0, 0, 0);
+      const isLate = nowDate > cutoff;
 
       if (isLate) {
-        // Show late reason modal
         setPendingLate({ memberId: member.id, name: member.full_name });
         setShowLateModal(true);
         setProcessing(false);
         return;
       }
 
-      await recordScan(member, status, "", scannedAt);
-    } catch (err) {
+      await recordScan(member, "present", "", new Date().toISOString());
+    } catch {
       setScanResult({
         type: "error",
         name: "Error",
@@ -285,24 +293,37 @@ export function ScannerClient({
     setProcessing(false);
   }
 
-  async function recordScan(member: CachedMember, status: "present" | "late", lateReason: string, scannedAt: string) {
-    const scanData = {
+  async function recordScan(
+    member: CachedMember,
+    status: "present" | "late",
+    reason: string,
+    scannedAt: string
+  ) {
+    const scanData: QueuedScan = {
       organisation_id: orgId,
       member_id: member.id,
-      scan_type: "entry" as const,
+      scan_type: "entry",
       status,
-      late_reason: lateReason || null,
+      late_reason: reason || null,
       device_id: "scanner-web",
       scanned_at: scannedAt,
+      queued_at: new Date().toISOString(),
     };
 
     if (isOnline) {
-      const { error } = await supabase.from("attendance_logs").insert(scanData);
+      const { error } = await supabase.from("attendance_logs").insert({
+        organisation_id: scanData.organisation_id,
+        member_id: scanData.member_id,
+        scan_type: scanData.scan_type,
+        status: scanData.status,
+        late_reason: scanData.late_reason,
+        device_id: scanData.device_id,
+        scanned_at: scanData.scanned_at,
+      });
       if (error) {
         await queueScan(scanData);
         updateQueueCount();
       } else {
-        // Send parent SMS
         fetch("/api/notify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -311,7 +332,7 @@ export function ScannerClient({
             member_id: member.id,
             org_id: orgId,
             is_late: status === "late",
-            late_reason: lateReason,
+            late_reason: reason,
           }),
         }).catch(() => {});
       }
@@ -326,7 +347,7 @@ export function ScannerClient({
       name: member.full_name,
       className: member.class_name ?? undefined,
       time: new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }),
-      lateReason: lateReason || undefined,
+      lateReason: reason || undefined,
     });
     clearResult();
   }
@@ -335,16 +356,17 @@ export function ScannerClient({
     if (!pendingLate) return;
     setProcessing(true);
 
-    const member = cachedMembers.find((m) => m.id === pendingLate.memberId) ?? {
+    const member: CachedMember = cachedMembers.find((m) => m.id === pendingLate.memberId) ?? {
       id: pendingLate.memberId,
       full_name: pendingLate.name,
       class_name: null,
       parent_phone: null,
       organisation_id: orgId,
       is_active: true,
+      qr_code: "",
     };
 
-    await recordScan(member as CachedMember, "late", lateReason, new Date().toISOString());
+    await recordScan(member, "late", lateReason, new Date().toISOString());
 
     setShowLateModal(false);
     setPendingLate(null);
@@ -357,7 +379,13 @@ export function ScannerClient({
     router.push("/login");
   }
 
-  const resultConfig = {
+  const resultConfig: Record<ScanResult["type"], {
+    bg: string;
+    icon: React.ElementType;
+    iconColor: string;
+    label: string;
+    labelColor: string;
+  }> = {
     success: { bg: "bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700/50", icon: CheckCircle, iconColor: "text-green-600 dark:text-green-400", label: "On Time", labelColor: "text-green-700 dark:text-green-300" },
     late:    { bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700/50", icon: Clock, iconColor: "text-amber-600 dark:text-amber-400", label: "Late", labelColor: "text-amber-700 dark:text-amber-300" },
     duplicate: { bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700/50", icon: AlertCircle, iconColor: "text-blue-600 dark:text-blue-400", label: "Already Scanned", labelColor: "text-blue-700 dark:text-blue-300" },
@@ -389,36 +417,29 @@ export function ScannerClient({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Queued count */}
           {queuedCount > 0 && (
             <span className="badge-amber text-[10px] font-mono">
               {queuedCount} queued
             </span>
           )}
-
           <div className="flex items-center gap-1.5 text-xs font-mono text-slate-600 dark:text-green-300">
             <Users size={13} />
             {scanCount}
           </div>
-
           <ThemeToggle compact />
-
           <button onClick={handleSignOut} className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors" title="Sign out">
             <LogOut size={15} />
           </button>
         </div>
       </div>
 
-      {/* Offline banner */}
       {!isOnline && (
         <div className="bg-amber-500 text-white text-xs py-2 px-4 text-center font-medium">
           📡 Offline mode — scans are being queued and will sync when you reconnect
         </div>
       )}
 
-      {/* Main scanner area */}
       <div className="flex-1 max-w-sm mx-auto w-full px-4 py-6 space-y-4">
-        {/* Scanner box */}
         <div className="card overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[#bbf7d0] dark:border-[#1a3a24] bg-green-50 dark:bg-green-950/20">
             <span className="relative flex h-2.5 w-2.5">
@@ -440,7 +461,6 @@ export function ScannerClient({
           </div>
         </div>
 
-        {/* Scan result */}
         {scanResult && (() => {
           const cfg = resultConfig[scanResult.type];
           const Icon = cfg.icon;
@@ -464,13 +484,11 @@ export function ScannerClient({
           );
         })()}
 
-        {/* Stats */}
         <div className="text-center text-xs text-slate-400 dark:text-[#4a7a5a] font-mono">
           {scanCount} scan{scanCount !== 1 ? "s" : ""} logged today · {cachedMembers.length} students cached
         </div>
       </div>
 
-      {/* Late reason modal */}
       {showLateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="card w-full max-w-sm p-6 space-y-4">

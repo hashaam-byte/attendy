@@ -1,10 +1,28 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, QrCode, Phone, Calendar } from "lucide-react";
+import { ArrowLeft, QrCode, Phone } from "lucide-react";
 import { cn, formatDateTime, formatDate, getInitials } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+
+type AttendanceLog = {
+  id: string;
+  scanned_at: string;
+  status: string;
+  scan_type: string;
+  late_reason: string | null;
+};
+
+type Student = {
+  id: string;
+  full_name: string;
+  class_name: string | null;
+  parent_phone: string | null;
+  employee_id: string | null;
+  is_active: boolean;
+  notes: string | null;
+};
 
 export default async function StudentProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -21,17 +39,18 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
 
   if (!orgUser) redirect("/login");
 
-  const { data: student } = await supabase
+  const { data: studentData } = await supabase
     .from("members")
-    .select("*")
+    .select("id, full_name, class_name, parent_phone, employee_id, is_active, notes")
     .eq("id", id)
     .eq("organisation_id", orgUser.organisation_id)
     .eq("member_type", "student")
     .single();
 
-  if (!student) notFound();
+  if (!studentData) notFound();
 
-  const today = new Date().toISOString().split("T")[0];
+  const student = studentData as Student;
+
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
   const [{ data: recentLogs }, { count: presentCount }, { count: lateCount }] = await Promise.all([
@@ -59,12 +78,12 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
       .gte("scanned_at", `${thirtyDaysAgo}T00:00:00`),
   ]);
 
+  const typedLogs = (recentLogs ?? []) as AttendanceLog[];
   const totalLogDays = (presentCount ?? 0) + (lateCount ?? 0);
   const attendancePct = totalLogDays > 0 ? Math.round(((presentCount ?? 0) / totalLogDays) * 100) : 0;
 
   return (
     <div className="max-w-3xl space-y-5">
-      {/* Back */}
       <div className="flex items-center gap-3">
         <Link href="/students" className="btn-ghost p-2">
           <ArrowLeft size={16} />
@@ -147,14 +166,14 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
           <table className="w-full">
             <thead className="bg-green-50 dark:bg-green-950/20">
               <tr className="border-b border-[#bbf7d0] dark:border-[#1a3a24]">
-                <th className="table-th">Date & Time</th>
+                <th className="table-th">Date &amp; Time</th>
                 <th className="table-th">Type</th>
                 <th className="table-th">Status</th>
                 <th className="table-th hidden sm:table-cell">Reason</th>
               </tr>
             </thead>
             <tbody>
-              {(recentLogs ?? []).map((log) => (
+              {typedLogs.map((log) => (
                 <tr key={log.id} className="table-row">
                   <td className="table-td">{formatDateTime(log.scanned_at)}</td>
                   <td className="table-td">
@@ -175,7 +194,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
                   </td>
                 </tr>
               ))}
-              {(recentLogs ?? []).length === 0 && (
+              {typedLogs.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400 dark:text-[#4a7a5a]">
                     No attendance records yet.

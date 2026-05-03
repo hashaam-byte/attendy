@@ -5,6 +5,11 @@ import { cn, formatNumber } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+type ClassData = {
+  students: Array<{ id: string; full_name: string; class_name: string | null; is_active: boolean }>;
+  present: number;
+};
+
 export default async function ClassesPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -22,7 +27,6 @@ export default async function ClassesPage() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  // Get members grouped by class
   const { data: members } = await supabase
     .from("members")
     .select("id, full_name, class_name, is_active")
@@ -30,7 +34,6 @@ export default async function ClassesPage() {
     .eq("member_type", "student")
     .eq("is_active", true);
 
-  // Today's attendance per member
   const { data: todayLogs } = await supabase
     .from("attendance_logs")
     .select("member_id, status")
@@ -40,13 +43,18 @@ export default async function ClassesPage() {
 
   const presentIds = new Set((todayLogs ?? []).map((l) => l.member_id));
 
-  // Group by class
-  const classMap: Record<string, { students: typeof members; present: number }> = {};
+  const classMap: Record<string, ClassData> = {};
+
   for (const m of members ?? []) {
     const cls = m.class_name ?? "Unassigned";
-    if (!classMap[cls]) classMap[cls] = { students: [], present: 0 };
-    classMap[cls].students.push(m);
-    if (presentIds.has(m.id)) classMap[cls].present++;
+    if (!classMap[cls]) {
+      classMap[cls] = { students: [], present: 0 };
+    }
+    const entry = classMap[cls];
+    if (entry) {
+      entry.students.push(m);
+      if (presentIds.has(m.id)) entry.present++;
+    }
   }
 
   const classes = Object.entries(classMap).sort(([a], [b]) => a.localeCompare(b));
