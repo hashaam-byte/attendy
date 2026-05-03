@@ -48,6 +48,15 @@ export default async function ReportsPage() {
       .eq("member_type", "student"),
   ]);
 
+  // FIX: normalize members (Supabase returns array)
+  const normalizedTodayLogs =
+    (todayLogs ?? []).map((log) => ({
+      ...log,
+      members: Array.isArray(log.members)
+        ? log.members[0] ?? null
+        : log.members,
+    }));
+
   // Build 7-day chart data
   const dayMap: Record<string, { present: number; late: number }> = {};
   (weeklyData ?? []).forEach((log) => {
@@ -59,15 +68,25 @@ export default async function ReportsPage() {
 
   const chartData = Array.from({ length: 7 }, (_, i) => {
     const d = format(subDays(new Date(), 6 - i), "yyyy-MM-dd");
-    return { date: d, label: format(subDays(new Date(), 6 - i), "EEE"), ...dayMap[d] ?? { present: 0, late: 0 } };
+    return {
+      date: d,
+      label: format(subDays(new Date(), 6 - i), "EEE"),
+      ...(dayMap[d] ?? { present: 0, late: 0 }),
+    };
   });
 
-  const uniqueClasses = [...new Set((classes ?? []).map((c) => c.class_name).filter(Boolean) as string[])].sort();
+  const uniqueClasses = [
+    ...new Set(
+      (classes ?? [])
+        .map((c) => c.class_name)
+        .filter(Boolean) as string[]
+    ),
+  ].sort();
 
   return (
     <ReportsClient
       orgId={orgId}
-      todayLogs={todayLogs ?? []}
+      todayLogs={normalizedTodayLogs}
       chartData={chartData}
       classes={uniqueClasses}
     />

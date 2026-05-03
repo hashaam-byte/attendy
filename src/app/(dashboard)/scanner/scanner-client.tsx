@@ -342,13 +342,13 @@ export function ScannerClient({
     }
 
     setScanCount((c) => c + 1);
-    setScanResult({
-      type: status,
-      name: member.full_name,
-      className: member.class_name ?? undefined,
-      time: new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }),
-      lateReason: reason || undefined,
-    });
+   setScanResult({
+  type: status === "present" ? "success" : "late",
+  name: member.full_name,
+  className: member.class_name ?? undefined,
+  time: new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }),
+  lateReason: reason || undefined,
+});
     clearResult();
   }
 
