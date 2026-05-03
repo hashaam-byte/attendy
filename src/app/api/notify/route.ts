@@ -1,67 +1,69 @@
-// src/app/api/notify/route.ts
-// Replaces the old inline sendSMS helper with the shared lib/termii.ts utility.
-
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { sendSms, buildScanMessage } from "@/lib/termii";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { sendSms, buildArrivalSms } from "@/lib/sms";
+
+const serviceSupabase = createServiceClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: NextRequest) {
-  const { studentId, isLate, reason, time, attendanceId } = await req.json();
+  const body = await req.json();
+  const { type, member_id, org_id, is_late, late_reason } = body;
 
-  if (!studentId) {
-    return NextResponse.json({ error: "studentId required" }, { status: 400 });
+  if (!member_id || !org_id) {
+    return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
 
-  const supabase = await createClient();
+  // Get member + org
+  const [{ data: member }, { data: org }] = await Promise.all([
+    serviceSupabase
+      .from("members")
+      .select("full_name, parent_phone, class_name")
+      .eq("id", member_id)
+      .single(),
 
-  const { data: student, error: studentError } = await supabase
-    .from("students")
-    .select("full_name, parent_phone, class, school_id")
-    .eq("id", studentId)
-    .single();
+    serviceSupabase
+      .from("organisations")
+      .select("name, sms_sender_id")
+      .eq("id", org_id)
+      .single(),
+  ]);
 
-  if (studentError || !student) {
-    return NextResponse.json({ error: "Student not found" }, { status: 404 });
+  if (!member?.parent_phone) {
+    return NextResponse.json({ skipped: true, reason: "no_phone" });
   }
 
-  const { data: settings } = await supabase
-    .from("school_settings")
-    .select("sms_enabled")
-    .eq("school_id", student.school_id)
-    .single();
+  const time = new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" });
 
-  if (!settings?.sms_enabled) {
-    return NextResponse.json({ skipped: true, reason: "sms_disabled" });
+  let message = "";
+  if (type === "arrival") {
+    message = buildArrivalSms({
+      parentName: "Parent",
+      studentName: member.full_name,
+      schoolName: org?.name ?? "School",
+      time,
+      isLate: is_late ?? false,
+    });
+  } else if (type === "registration") {
+    message = `Attendy: ${member.full_name} has been registered at ${org?.name ?? "School"}. Their QR card is ready.`;
+  } else {
+    return NextResponse.json({ error: "Unknown type" }, { status: 400 });
   }
 
-  const message = buildScanMessage(
-    student.full_name,
-    student.class,
-    isLate,
-    time ?? new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }),
-    reason
-  );
+  const result = await sendSms(member.parent_phone, message);
 
-  const result = await sendSms(student.parent_phone, message);
-
-  // Log result
-  const logEntry: Record<string, unknown> = {
-    school_id: student.school_id,
-    student_id: studentId,
+  // Log notification
+  await serviceSupabase.from("notifications_log").insert({
+    organisation_id: org_id,
+    member_id,
     channel: "sms",
-    phone: student.parent_phone,
+    recipient: member.parent_phone,
     message,
-    status: result.success ? "sent" : "failed",
-    error_message: result.error ?? null,
-  };
-  if (attendanceId) logEntry.attendance_id = attendanceId;
-
-  await supabase.from("notifications_log").insert(logEntry);
-
-  return NextResponse.json({
-    success: result.success,
-    channel: result.channel,
-    dev_mode: result.devMode ?? false,
-    error: result.error,
+    status: result.ok ? "sent" : "failed",
+    provider_message_id: result.messageId ?? null,
+    error_message: result.ok ? null : result.error,
   });
+
+  return NextResponse.json({ success: result.ok, error: result.error });
 }
