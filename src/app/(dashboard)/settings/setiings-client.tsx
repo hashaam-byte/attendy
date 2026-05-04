@@ -29,27 +29,51 @@ export function SettingsClient({
     setTimeout(() => setSaved(null), 2500);
   }
 
-  async function handleInvite(e: React.FormEvent) {
-    e.preventDefault();
-    if (!inviteEmail.trim()) return;
-    setInviting(true);
-    setInviteResult(null);
+async function handleInvite(e: React.FormEvent) {
+  e.preventDefault();
+  const trimmedEmail = inviteEmail.trim().toLowerCase();
 
-    // Generate invite via Supabase Auth admin (server-side)
+  if (!trimmedEmail) return;
+
+  // Basic email validation
+  if (!trimmedEmail.includes("@") || !trimmedEmail.includes(".")) {
+    setInviteResult("✗ Please enter a valid email address");
+    return;
+  }
+
+  setInviting(true);
+  setInviteResult(null);
+
+  try {
     const res = await fetch("/api/invite-staff", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole, org_id: org.id }),
+      body: JSON.stringify({
+        email: trimmedEmail,
+        role: inviteRole,
+        org_id: org.id,
+      }),
     });
+
     const data = await res.json();
+
     if (res.ok) {
-      setInviteResult(`✓ Invite sent to ${inviteEmail}`);
+      setInviteResult(
+        `✓ Invite sent to ${trimmedEmail}. They will receive an email with a link to set their password and log in.`
+      );
       setInviteEmail("");
     } else {
-      setInviteResult(`✗ ${data.error ?? "Failed to send invite"}`);
+      // Show the actual error from the server
+      setInviteResult(`✗ ${data.error ?? "Failed to send invite. Please try again."}`);
     }
+  } catch {
+    setInviteResult("✗ Network error. Check your connection and try again.");
+  } finally {
     setInviting(false);
   }
+}
+
+
 
   const planLimit = PLAN_LIMITS[org?.plan as PlanType] ?? PLAN_LIMITS.trial;
   const planExpiry = org?.plan_expires_at ? new Date(org.plan_expires_at) : null;
@@ -178,11 +202,17 @@ export function SettingsClient({
           </button>
         </form>
 
-        {inviteResult && (
-          <p className={cn("text-xs", inviteResult.startsWith("✓") ? "text-green-600 dark:text-green-400" : "text-red-500")}>
-            {inviteResult}
-          </p>
-        )}
+        /
+{inviteResult && (
+  <div className={cn(
+    "p-3 rounded-lg text-xs leading-relaxed",
+    inviteResult.startsWith("✓")
+      ? "bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40 text-green-700 dark:text-green-300"
+      : "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-300"
+  )}>
+    {inviteResult}
+  </div>
+)}
 
         {/* Staff table */}
         <div className="overflow-x-auto">

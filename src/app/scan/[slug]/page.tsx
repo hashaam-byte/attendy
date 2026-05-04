@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
-import { ScannerClient } from "@/app/dashboard/scanner/scanner-client";
+import { ScannerClient } from "@/app/(dashboard)/scanner/scanner-client";
 
 export const dynamic = "force-dynamic";
 
