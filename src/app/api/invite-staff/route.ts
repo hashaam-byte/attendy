@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
   // Invite via Supabase Auth
   const { data: inviteData, error: inviteError } = await serviceSupabase.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/login`,
+    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/accept-invite`,
     data: { org_id, role },
   });
 

@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -25,12 +25,17 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
-  const { pathname } = request.nextUrl;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // Public paths — always accessible
-  const publicPaths = ["/login", "/portal", "/api/scan", "/api/notify", "/api/auth"];
-  const isPublic = publicPaths.some((p) => pathname.startsWith(p));
+  const pathname = request.nextUrl.pathname;
+
+  // Public routes that don't need auth
+  const publicPaths = ["/login", "/portal", "/accept-invite"];
+  const isPublic =
+    publicPaths.some((p) => pathname.startsWith(p)) ||
+    pathname.startsWith("/scan/"); // public slug scanner
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
@@ -49,6 +54,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
