@@ -1,54 +1,65 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { GraduationCap, Loader2, Eye, EyeOff, CheckCircle } from "lucide-react";
+import {
+  GraduationCap, Loader2, Eye, EyeOff, CheckCircle, AlertCircle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function AcceptInviteForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const [sessionReady, setSessionReady] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    // Supabase handles the token from the URL hash automatically
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
-          if (session) setSessionReady(true);
-        }
+    // Session was already set by /auth/callback — just verify it exists
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUserEmail(session.user.email ?? null);
+      } else {
+        setError(
+          "This invite link has expired or was already used. " +
+          "Please ask your admin to send a new invite."
+        );
       }
-    );
-    return () => subscription.unsubscribe();
+      setChecking(false);
+    });
   }, []);
+
+  const strengthScore = password.length === 0 ? 0
+    : password.length < 8 ? 1
+    : password.length < 12 ? 2
+    : /[A-Z]/.test(password) && /[0-9]/.test(password) ? 4 : 3;
+
+  const strengthLabel = ["", "Too short", "Weak", "Good", "Strong"][strengthScore];
+  const strengthColor = ["", "bg-red-400", "bg-amber-400", "bg-blue-400", "bg-green-500"][strengthScore];
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
+    setError(null);
+    if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (password !== confirmPassword) { setError("Passwords do not match."); return; }
 
     setLoading(true);
-    setError(null);
-
     const { error: updateError } = await supabase.auth.updateUser({ password });
 
     if (updateError) {
-      setError(updateError.message);
+      setError(
+        updateError.message.toLowerCase().includes("session") ||
+        updateError.message.toLowerCase().includes("missing")
+          ? "Your session expired. Please ask your admin for a fresh invite link."
+          : updateError.message
+      );
       setLoading(false);
       return;
     }
@@ -57,16 +68,32 @@ function AcceptInviteForm() {
     setTimeout(() => router.push("/dashboard"), 2000);
   }
 
+  if (checking) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-10">
+        <Loader2 size={28} className="animate-spin text-green-500" />
+        <p className="text-sm text-slate-500 dark:text-[#6b9e7a]">Verifying your invite link…</p>
+      </div>
+    );
+  }
+
   if (done) {
     return (
-      <div className="text-center">
-        <CheckCircle size={48} className="text-green-500 mx-auto mb-4" />
-        <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
-          Password set!
-        </h2>
-        <p className="text-sm text-slate-500 dark:text-[#6b9e7a]">
-          Redirecting you to the dashboard…
-        </p>
+      <div className="text-center py-10">
+        <CheckCircle size={52} className="text-green-500 mx-auto mb-4" />
+        <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Password set!</h2>
+        <p className="text-sm text-slate-500 dark:text-[#6b9e7a]">Taking you to your dashboard…</p>
+      </div>
+    );
+  }
+
+  if (error && !userEmail) {
+    return (
+      <div className="text-center py-8">
+        <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+        <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Invite link invalid</h2>
+        <p className="text-sm text-slate-500 dark:text-[#6b9e7a] mb-6">{error}</p>
+        <a href="/login" className="btn-primary text-sm">Back to login</a>
       </div>
     );
   }
@@ -74,11 +101,10 @@ function AcceptInviteForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div>
-        <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">
-          Set your password
-        </h2>
+        <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Set your password</h2>
         <p className="text-sm text-slate-500 dark:text-[#6b9e7a]">
-          You've been invited to join your school on Attendy. Set a password to continue.
+          {userEmail ? `Welcome, ${userEmail}.` : "You've been invited."}{" "}
+          Choose a password to access your school portal.
         </p>
       </div>
 
@@ -96,14 +122,22 @@ function AcceptInviteForm() {
             minLength={8}
             required
           />
-          <button
-            type="button"
-            onClick={() => setShowPw(!showPw)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-          >
+          <button type="button" onClick={() => setShowPw(!showPw)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
             {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
+        {password.length > 0 && (
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex gap-1 flex-1">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className={cn("h-1 flex-1 rounded-full transition-colors",
+                  strengthScore >= i ? strengthColor : "bg-slate-200 dark:bg-[#1a3a24]")} />
+              ))}
+            </div>
+            <span className="text-[11px] text-slate-400">{strengthLabel}</span>
+          </div>
+        )}
       </div>
 
       <div>
@@ -112,30 +146,30 @@ function AcceptInviteForm() {
         </label>
         <input
           type="password"
-          className="input-base"
+          className={cn("input-base", confirmPassword && confirmPassword !== password && "border-red-400")}
           placeholder="Repeat your password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           required
         />
+        {confirmPassword && confirmPassword !== password && (
+          <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
+        )}
       </div>
 
       {error && (
-        <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 text-sm text-red-700 dark:text-red-400">
+        <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 text-sm text-red-700 dark:text-red-400 flex items-start gap-2">
+          <AlertCircle size={14} className="shrink-0 mt-0.5" />
           {error}
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={loading || !password || !confirmPassword}
-        className={cn("btn-primary w-full py-3", loading && "opacity-75")}
-      >
-        {loading ? (
-          <><Loader2 size={16} className="animate-spin" /> Setting password…</>
-        ) : (
-          "Set password & continue"
-        )}
+      <button type="submit"
+        disabled={loading || !password || !confirmPassword || password !== confirmPassword}
+        className={cn("btn-primary w-full py-3", loading && "opacity-75")}>
+        {loading
+          ? <><Loader2 size={16} className="animate-spin" /> Setting password…</>
+          : "Set password & continue"}
       </button>
     </form>
   );
@@ -151,16 +185,16 @@ export default function AcceptInvitePage() {
               <GraduationCap size={30} className="text-white" />
             </div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Attendy Edu</h1>
-            <p className="text-sm text-slate-500 dark:text-[#6b9e7a] mt-1">
-              School Attendance Management
-            </p>
+            <p className="text-sm text-slate-500 dark:text-[#6b9e7a] mt-1">School Attendance Management</p>
           </div>
-
           <div className="card p-8 shadow-xl shadow-green-500/5">
-            <Suspense fallback={<div className="text-center py-4"><Loader2 size={24} className="animate-spin mx-auto text-green-500" /></div>}>
+            <Suspense fallback={<div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin text-green-500" /></div>}>
               <AcceptInviteForm />
             </Suspense>
           </div>
+          <p className="text-center text-xs text-slate-400 dark:text-[#4a7a5a] mt-6">
+            Powered by Attendy · Built for Nigerian Schools
+          </p>
         </div>
       </div>
     </div>
