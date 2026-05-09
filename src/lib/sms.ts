@@ -1,4 +1,6 @@
-// SERVER ONLY
+// src/lib/sms.ts — ATTENDY-EDU
+// SERVER ONLY — never import in client components.
+// Updated with full Termii error logging: HTTP status, error code, response body.
 
 interface SmsResult {
   ok: boolean;
@@ -24,25 +26,12 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
 
   const phone = normalisePhone(to);
 
-  try {
-    const res = await fetch("https://v3.api.termii.com/api/sms/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: apiKey,
-        to: phone,
-        from: senderId,
-        sms: message.slice(0, 160),
-        type: "plain",
-        channel: "dnd",
-      }),
-    });
+  async function attempt(channel: "dnd" | "generic"): Promise<SmsResult> {
+    let res: Response;
+    let rawText: string;
 
-    const data = await res.json();
-
-    if (!res.ok || data.code === "error") {
-      // Fallback to generic channel
-      const res2 = await fetch("https://v3.api.termii.com/api/sms/send", {
+    try {
+      res = await fetch("https://v3.api.termii.com/api/sms/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -51,20 +40,48 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
           from: senderId,
           sms: message.slice(0, 160),
           type: "plain",
-          channel: "generic",
+          channel,
         }),
       });
-      const data2 = await res2.json();
-      if (!res2.ok || data2.code === "error") {
-        return { ok: false, error: data2.message ?? "Termii error" };
-      }
-      return { ok: true, messageId: data2.message_id };
+      rawText = await res.text();
+    } catch (networkErr: any) {
+      const msg = `Termii network error (${channel}): ${networkErr.message}`;
+      console.error(`[SMS ERROR] ${msg}`);
+      return { ok: false, error: msg };
     }
 
-    return { ok: true, messageId: data.message_id };
-  } catch (err: any) {
-    return { ok: false, error: err.message };
+    let data: any;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = { raw: rawText };
+    }
+
+    if (!res.ok || data?.code === "error") {
+      const errMsg = [
+        `Termii error (${channel})`,
+        `HTTP ${res.status}`,
+        data?.code ? `code=${data.code}` : null,
+        data?.message ? `message="${data.message}"` : null,
+        data?.description ? `desc="${data.description}"` : null,
+      ].filter(Boolean).join(" | ");
+
+      console.error(`[SMS ERROR] to=${phone} | ${errMsg}`);
+      console.error(`[SMS ERROR] Full response body:`, rawText);
+      return { ok: false, error: errMsg };
+    }
+
+    console.log(`[SMS OK] to=${phone} channel=${channel} messageId=${data?.message_id}`);
+    return { ok: true, messageId: data?.message_id };
   }
+
+  // Try DND first (registered sender IDs bypass DND), fall back to generic
+  const result = await attempt("dnd");
+  if (!result.ok) {
+    console.warn(`[SMS] DND channel failed, trying generic…`);
+    return await attempt("generic");
+  }
+  return result;
 }
 
 export function buildArrivalSms(opts: {
