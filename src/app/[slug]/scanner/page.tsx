@@ -4,7 +4,7 @@ import { ScannerClient } from "./scanner-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function ScannerPage() {
+export default async function ScannerPage({ params }: { params: { slug: string } }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -21,7 +21,7 @@ export default async function ScannerPage() {
   // Get org settings
   const { data: org } = await supabase
     .from("organisations")
-    .select("name, is_active, plan, plan_expires_at")
+    .select("name, is_active, plan, plan_expires_at, primary_color, settings")
     .eq("id", orgUser.organisation_id)
     .single();
 
@@ -33,6 +33,9 @@ export default async function ScannerPage() {
       orgName={org.name}
       role={orgUser.role}
       userId={user.id}
+      orgSlug={params.slug}
+      primaryColor={org.primary_color}
+      settings={org.settings}
     />
   );
 }

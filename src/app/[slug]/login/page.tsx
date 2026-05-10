@@ -1,9 +1,8 @@
 "use client";
 // src/app/[slug]/login/page.tsx — ATTENDY-EDU
 // School-specific login page at /<slug>/login
-// e.g. attendy-edu.vercel.app/greenfield-academy/login
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, use } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Eye, EyeOff, Loader2, GraduationCap, QrCode, AlertCircle } from "lucide-react";
@@ -25,18 +24,30 @@ function LoginForm({ slug }: { slug: string }) {
   const [fetchingOrg, setFetchingOrg] = useState(true);
 
   useEffect(() => {
+    // Guard: slug must be a real string before we hit the API
+    if (!slug || typeof slug !== "string") return;
+
+    let cancelled = false;
     setFetchingOrg(true);
+
     fetch(`/api/check-org?slug=${encodeURIComponent(slug)}`)
       .then(r => r.json())
       .then(d => {
+        if (cancelled) return;
         if (!d.exists) { router.replace(`/not-found-org?slug=${encodeURIComponent(slug)}`); return; }
         if (d.suspended) { router.replace(`/suspended?slug=${encodeURIComponent(slug)}`); return; }
         if (d.expired) { router.replace(`/expired?slug=${encodeURIComponent(slug)}`); return; }
         setOrgInfo({ name: d.name });
       })
-      .catch(() => setError("Could not verify school. Check your connection."))
-      .finally(() => setFetchingOrg(false));
-  }, [slug]);
+      .catch(() => {
+        if (!cancelled) setError("Could not verify school. Check your connection.");
+      })
+      .finally(() => {
+        if (!cancelled) setFetchingOrg(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [slug]); // slug is now a stable string, so this only runs once
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -81,7 +92,6 @@ function LoginForm({ slug }: { slug: string }) {
       return;
     }
 
-    // Verify this user belongs to THIS slug
     if (org?.slug !== slug) {
       await supabase.auth.signOut();
       setError("This account does not belong to this school. Use your own school's login page.");
@@ -90,9 +100,9 @@ function LoginForm({ slug }: { slug: string }) {
     }
 
     if (orgUser.role === "gateman") {
-      router.push("/scanner");
+      router.push(`/${slug}/scanner`);
     } else {
-      router.push("/dashboard");
+      router.push(`/${slug}/dashboard`);
     }
     router.refresh();
   }
@@ -169,13 +179,17 @@ function LoginForm({ slug }: { slug: string }) {
   );
 }
 
-export default function SlugLoginPage({ params }: { params: { slug: string } }) {
+// In Next.js 16, params is a Promise — must be unwrapped with React.use()
+// in client components (can't use await in "use client" page exports).
+export default function SlugLoginPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
+
   return (
     <div className="min-h-screen flex flex-col bg-[var(--bg-base)]">
       <div className="absolute top-4 right-4 z-10"><ThemeToggle /></div>
       <div className="flex-1 flex items-center justify-center px-4 py-12">
         <Suspense fallback={<div className="flex justify-center"><Loader2 size={28} className="animate-spin text-green-500" /></div>}>
-          <LoginForm slug={params.slug} />
+          <LoginForm slug={slug} />
         </Suspense>
       </div>
     </div>

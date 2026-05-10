@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -19,15 +18,29 @@ export async function GET(req: NextRequest) {
     .eq("industry", "education")
     .single();
 
-  if (!data) return NextResponse.json({ exists: false }, { status: 404 });
+  if (!data) {
+    return NextResponse.json(
+      { exists: false },
+      {
+        status: 404,
+        headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" },
+      }
+    );
+  }
 
   const isExpired =
     data.plan_expires_at && new Date(data.plan_expires_at) < new Date();
 
-  return NextResponse.json({
-    exists: true,
-    name: data.name,
-    suspended: !data.is_active,
-    expired: isExpired ?? false,
-  });
+  return NextResponse.json(
+    {
+      exists: true,
+      name: data.name,
+      suspended: !data.is_active,
+      expired: isExpired ?? false,
+    },
+    {
+      // Cache successful org lookups for 5 minutes — org names/status rarely change
+      headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
+    }
+  );
 }

@@ -1,27 +1,37 @@
 "use client";
+// src/app/[slug]/scanner/scanner-client.tsx — ATTENDY-EDU v3
+// FIXES:
+//   - Late cutoff reads from org.settings (no more hardcoded 8 AM)
+//   - Sign-out goes to /[slug]/login (not /login)
+//   - Public scanner (no session) hides sign-out button
+//   - Success/error animations improved
+//   - Duplicate scan shows original time clearly
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   CheckCircle, Clock, XCircle, AlertCircle, Loader2,
-  ScanLine, Wifi, WifiOff, Users, LogOut,
+  ScanLine, Wifi, WifiOff, Users, LogOut, Volume2, VolumeX,
 } from "lucide-react";
 import { cn, formatTime } from "@/lib/utils";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
-const Html5QrScanner = dynamic(() => import("@/components/scanner/qr-scanner"), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-60 flex items-center justify-center bg-black/20 rounded-xl">
-      <div className="text-center text-green-400">
-        <Loader2 size={28} className="animate-spin mx-auto mb-2" />
-        <p className="text-xs font-mono">Initialising camera…</p>
+const Html5QrScanner = dynamic(
+  () => import("@/components/scanner/qr-scanner"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-60 flex items-center justify-center bg-black/20 rounded-xl">
+        <div className="text-center text-green-400">
+          <Loader2 size={28} className="animate-spin mx-auto mb-2" />
+          <p className="text-xs font-mono">Initialising camera…</p>
+        </div>
       </div>
-    </div>
-  ),
-});
+    ),
+  }
+);
 
 type ScanResult = {
   type: "success" | "late" | "duplicate" | "error" | "unknown";
@@ -53,14 +63,14 @@ type QueuedScan = {
   queued_at: string;
 };
 
-// IndexedDB helpers
-const DB_NAME = "attendy_offline";
-const STORE_NAME = "scan_queue";
+// ── IndexedDB helpers ────────────────────────────────────────
+const DB_NAME = "attendy_offline_v2";
+const STORE = "scan_queue";
 
 async function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME, { autoIncrement: true });
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { autoIncrement: true });
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -68,47 +78,58 @@ async function openDB(): Promise<IDBDatabase> {
 
 async function queueScan(scan: QueuedScan) {
   const db = await openDB();
-  const tx = db.transaction(STORE_NAME, "readwrite");
-  tx.objectStore(STORE_NAME).add(scan);
+  return new Promise<void>((res) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).add(scan);
+    tx.oncomplete = () => res();
+  });
 }
 
 async function getQueuedScans(): Promise<{ key: IDBValidKey; value: QueuedScan }[]> {
   const db = await openDB();
   return new Promise((resolve) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const store = tx.objectStore(STORE_NAME);
+    const tx = db.transaction(STORE, "readonly");
     const results: { key: IDBValidKey; value: QueuedScan }[] = [];
-    store.openCursor().onsuccess = (e: Event) => {
+    tx.objectStore(STORE).openCursor().onsuccess = (e: Event) => {
       const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
       if (cursor) {
         results.push({ key: cursor.key, value: cursor.value as QueuedScan });
         cursor.continue();
-      } else {
-        resolve(results);
-      }
+      } else resolve(results);
     };
   });
 }
 
 async function deleteQueuedScan(key: IDBValidKey) {
   const db = await openDB();
-  const tx = db.transaction(STORE_NAME, "readwrite");
-  tx.objectStore(STORE_NAME).delete(key);
+  return new Promise<void>((res) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).delete(key);
+    tx.oncomplete = () => res();
+  });
 }
 
-const LATE_REASONS = ["Traffic", "Overslept", "Family issue", "Medical", "Other"];
+const LATE_REASONS = ["Traffic", "Overslept", "Family issue", "Medical", "School bus delay", "Other"];
 
-export function ScannerClient({
-  orgId,
-  orgName,
-  role,
-  userId,
-}: {
+interface OrgSettings {
+  start_time?: string;
+  grace_period_minutes?: number;
+}
+
+interface Props {
   orgId: string;
   orgName: string;
+  orgSlug: string;
   role: string;
   userId: string;
-}) {
+  primaryColor: string;
+  settings: OrgSettings;
+  isPublicScanner?: boolean;
+}
+
+export function ScannerClient({
+  orgId, orgName, orgSlug, role, userId, primaryColor, settings, isPublicScanner = false,
+}: Props) {
   const supabase = createClient();
   const router = useRouter();
 
@@ -122,19 +143,34 @@ export function ScannerClient({
   const [lateReason, setLateReason] = useState("");
   const [pendingLate, setPendingLate] = useState<{ memberId: string; name: string } | null>(null);
   const [currentTime, setCurrentTime] = useState("");
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const lastScannedRef = useRef<string>("");
   const lastScannedTimeRef = useRef<number>(0);
   const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Compute late cutoff from org settings (no more hardcoded 8AM!)
+  const getCutoff = useCallback(() => {
+    const startTime = settings.start_time || "07:30";
+    const grace = settings.grace_period_minutes ?? 15;
+    const [h, m] = startTime.split(":").map(Number);
+    const now = new Date();
+    const cutoff = new Date(now);
+    cutoff.setHours(h, m + grace, 0, 0);
+    return cutoff;
+  }, [settings]);
+
   // Live clock
   useEffect(() => {
-    const tick = () => setCurrentTime(new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    const tick = () =>
+      setCurrentTime(
+        new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      );
     tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, []);
 
-  // Online/offline detection
+  // Online/offline
   useEffect(() => {
     const onOnline = () => { setIsOnline(true); syncQueue(); };
     const onOffline = () => setIsOnline(false);
@@ -145,12 +181,11 @@ export function ScannerClient({
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cache member list on load
+  // Cache member list
   useEffect(() => {
-    async function loadMembers() {
+    (async () => {
       const { data } = await supabase
         .from("members")
         .select("id, full_name, class_name, parent_phone, organisation_id, is_active, qr_code")
@@ -158,58 +193,79 @@ export function ScannerClient({
         .eq("is_active", true)
         .eq("member_type", "student");
       if (data) setCachedMembers(data as CachedMember[]);
-    }
-    loadMembers();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    })();
   }, [orgId]);
 
-  async function updateQueueCount() {
-    const q = await getQueuedScans();
-    setQueuedCount(q.length);
-  }
-
-  useEffect(() => { updateQueueCount(); }, []);
+  // Load queued count
+  useEffect(() => {
+    getQueuedScans().then((q) => setQueuedCount(q.length));
+  }, []);
 
   async function syncQueue() {
     const queued = await getQueuedScans();
     for (const { key, value } of queued) {
       try {
-        await supabase.from("attendance_logs").insert({
+        const { error } = await supabase.from("attendance_logs").insert({
           organisation_id: value.organisation_id,
           member_id: value.member_id,
           scan_type: "entry",
           status: value.status,
-          late_reason: value.late_reason ?? null,
+          late_reason: value.late_reason,
           device_id: "scanner-offline",
           scanned_at: value.scanned_at,
         });
-        await deleteQueuedScan(key);
-      } catch {
-        // Continue trying other queued items
-      }
+        if (!error) await deleteQueuedScan(key);
+      } catch {}
     }
-    updateQueueCount();
+    const remaining = await getQueuedScans();
+    setQueuedCount(remaining.length);
+  }
+
+  function playBeep(type: "success" | "late" | "error") {
+    if (!soundEnabled || typeof window === "undefined") return;
+    try {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === "success") {
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
+      } else if (type === "late") {
+        osc.frequency.setValueAtTime(660, ctx.currentTime);
+      } else {
+        osc.frequency.setValueAtTime(220, ctx.currentTime);
+        osc.frequency.setValueAtTime(180, ctx.currentTime + 0.1);
+      }
+
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } catch {}
   }
 
   function clearResult() {
-    clearTimerRef.current = setTimeout(() => setScanResult(null), 3000);
+    if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+    clearTimerRef.current = setTimeout(() => setScanResult(null), 4000);
   }
 
   async function handleScan(qrCode: string) {
     if (processing) return;
-
     const now = Date.now();
     if (qrCode === lastScannedRef.current && now - lastScannedTimeRef.current < 3000) return;
     lastScannedRef.current = qrCode;
     lastScannedTimeRef.current = now;
-
     if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
     setProcessing(true);
     setScanResult(null);
 
     try {
-      // Find member from cache first (works offline)
-      let member: CachedMember | null = cachedMembers.find((m) => m.qr_code === qrCode) ?? null;
+      // Find member from cache first (offline capable)
+      let member: CachedMember | null =
+        cachedMembers.find((m) => m.qr_code === qrCode) ?? null;
 
       if (!member && isOnline) {
         const { data } = await supabase
@@ -222,6 +278,7 @@ export function ScannerClient({
       }
 
       if (!member) {
+        playBeep("error");
         setScanResult({ type: "unknown", name: "Unknown QR", time: new Date().toLocaleTimeString() });
         setProcessing(false);
         clearResult();
@@ -229,37 +286,33 @@ export function ScannerClient({
       }
 
       if (!member.is_active) {
-        setScanResult({
-          type: "error",
-          name: member.full_name,
-          className: member.class_name ?? undefined,
-          time: new Date().toLocaleTimeString(),
-          message: "Student is inactive",
-        });
+        playBeep("error");
+        setScanResult({ type: "error", name: member.full_name, className: member.class_name ?? undefined, time: new Date().toLocaleTimeString(), message: "Student account is inactive" });
         setProcessing(false);
         clearResult();
         return;
       }
 
-      const today = new Date().toISOString().split("T")[0];
-
+      // Duplicate check (only online)
       if (isOnline) {
+        const todayStart = new Date().toISOString().split("T")[0];
         const { data: existing } = await supabase
           .from("attendance_logs")
           .select("id, scanned_at")
           .eq("member_id", member.id)
           .eq("organisation_id", orgId)
           .eq("scan_type", "entry")
-          .gte("scanned_at", `${today}T00:00:00`)
+          .gte("scanned_at", `${todayStart}T00:00:00`)
           .limit(1);
 
         if (existing && existing.length > 0) {
+          playBeep("error");
           setScanResult({
             type: "duplicate",
             name: member.full_name,
             className: member.class_name ?? undefined,
             time: new Date().toLocaleTimeString(),
-            message: `Already checked in at ${formatTime(existing[0].scanned_at)}`,
+            message: `Already scanned at ${formatTime(existing[0].scanned_at)}`,
           });
           setProcessing(false);
           clearResult();
@@ -267,11 +320,9 @@ export function ScannerClient({
         }
       }
 
-      // Late check: after 8:00 AM
-      const nowDate = new Date();
-      const cutoff = new Date(nowDate);
-      cutoff.setHours(8, 0, 0, 0);
-      const isLate = nowDate > cutoff;
+      // Late check using org settings
+      const cutoff = getCutoff();
+      const isLate = new Date() > cutoff;
 
       if (isLate) {
         setPendingLate({ memberId: member.id, name: member.full_name });
@@ -281,24 +332,16 @@ export function ScannerClient({
       }
 
       await recordScan(member, "present", "", new Date().toISOString());
-    } catch {
-      setScanResult({
-        type: "error",
-        name: "Error",
-        time: new Date().toLocaleTimeString(),
-        message: "Something went wrong. Try again.",
-      });
+    } catch (err) {
+      console.error("Scan error:", err);
+      playBeep("error");
+      setScanResult({ type: "error", name: "Error", time: new Date().toLocaleTimeString(), message: "Something went wrong. Try again." });
       clearResult();
     }
     setProcessing(false);
   }
 
-  async function recordScan(
-    member: CachedMember,
-    status: "present" | "late",
-    reason: string,
-    scannedAt: string
-  ) {
+  async function recordScan(member: CachedMember, status: "present" | "late", reason: string, scannedAt: string) {
     const scanData: QueuedScan = {
       organisation_id: orgId,
       member_id: member.id,
@@ -320,10 +363,12 @@ export function ScannerClient({
         device_id: scanData.device_id,
         scanned_at: scanData.scanned_at,
       });
+
       if (error) {
         await queueScan(scanData);
-        updateQueueCount();
+        setQueuedCount((c) => c + 1);
       } else {
+        // Fire-and-forget parent notification
         fetch("/api/notify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -338,24 +383,24 @@ export function ScannerClient({
       }
     } else {
       await queueScan(scanData);
-      updateQueueCount();
+      setQueuedCount((c) => c + 1);
     }
 
+    playBeep(status === "present" ? "success" : "late");
     setScanCount((c) => c + 1);
-   setScanResult({
-  type: status === "present" ? "success" : "late",
-  name: member.full_name,
-  className: member.class_name ?? undefined,
-  time: new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }),
-  lateReason: reason || undefined,
-});
+    setScanResult({
+      type: status === "present" ? "success" : "late",
+      name: member.full_name,
+      className: member.class_name ?? undefined,
+      time: new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }),
+      lateReason: reason || undefined,
+    });
     clearResult();
   }
 
   async function submitLateReason() {
     if (!pendingLate) return;
     setProcessing(true);
-
     const member: CachedMember = cachedMembers.find((m) => m.id === pendingLate.memberId) ?? {
       id: pendingLate.memberId,
       full_name: pendingLate.name,
@@ -365,9 +410,7 @@ export function ScannerClient({
       is_active: true,
       qr_code: "",
     };
-
     await recordScan(member, "late", lateReason, new Date().toISOString());
-
     setShowLateModal(false);
     setPendingLate(null);
     setLateReason("");
@@ -376,78 +419,92 @@ export function ScannerClient({
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    router.push("/login");
+    router.push(`/${orgSlug}/login`);
   }
 
-  const resultConfig: Record<ScanResult["type"], {
-    bg: string;
-    icon: React.ElementType;
-    iconColor: string;
-    label: string;
-    labelColor: string;
-  }> = {
-    success: { bg: "bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700/50", icon: CheckCircle, iconColor: "text-green-600 dark:text-green-400", label: "On Time", labelColor: "text-green-700 dark:text-green-300" },
-    late:    { bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700/50", icon: Clock, iconColor: "text-amber-600 dark:text-amber-400", label: "Late", labelColor: "text-amber-700 dark:text-amber-300" },
+  const resultConfig = {
+    success: { bg: "bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700/50", icon: CheckCircle, iconColor: "text-green-600 dark:text-green-400", label: "✓ On Time", labelColor: "text-green-700 dark:text-green-300" },
+    late: { bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700/50", icon: Clock, iconColor: "text-amber-600 dark:text-amber-400", label: "Late Arrival", labelColor: "text-amber-700 dark:text-amber-300" },
     duplicate: { bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700/50", icon: AlertCircle, iconColor: "text-blue-600 dark:text-blue-400", label: "Already Scanned", labelColor: "text-blue-700 dark:text-blue-300" },
-    error:   { bg: "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-700/50", icon: XCircle, iconColor: "text-red-600 dark:text-red-400", label: "Error", labelColor: "text-red-700 dark:text-red-300" },
+    error: { bg: "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-700/50", icon: XCircle, iconColor: "text-red-600 dark:text-red-400", label: "Error", labelColor: "text-red-700 dark:text-red-300" },
     unknown: { bg: "bg-slate-50 dark:bg-slate-950/30 border-slate-300 dark:border-slate-700/50", icon: XCircle, iconColor: "text-slate-600 dark:text-slate-400", label: "Unknown QR", labelColor: "text-slate-700 dark:text-slate-300" },
   };
 
+  // Cutoff time for display
+  const startTime = settings.start_time || "07:30";
+  const grace = settings.grace_period_minutes ?? 15;
+  const [sh, sm] = startTime.split(":").map(Number);
+  const totalM = sh * 60 + sm + grace;
+  const ch = Math.floor(totalM / 60);
+  const cm = totalM % 60;
+  const cutoffStr = `${ch}:${String(cm).padStart(2, "0")} ${ch >= 12 ? "PM" : "AM"}`;
+
   return (
     <div className="min-h-screen bg-[var(--bg-base)] flex flex-col">
-      {/* Scanner topbar */}
+      {/* Topbar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#bbf7d0] dark:border-[#1a3a24] bg-white dark:bg-[#0c1a12]">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-green-600 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: primaryColor }}>
             <ScanLine size={16} className="text-white" />
           </div>
           <div>
             <p className="text-sm font-bold text-slate-900 dark:text-white">{orgName}</p>
             <div className="flex items-center gap-2">
-              <span className={cn(
-                "flex items-center gap-1 text-[10px] font-mono",
-                isOnline ? "text-green-600 dark:text-green-400" : "text-red-500"
-              )}>
+              <span className={cn("flex items-center gap-1 text-[10px] font-mono", isOnline ? "text-green-600 dark:text-green-400" : "text-red-500")}>
                 {isOnline ? <Wifi size={10} /> : <WifiOff size={10} />}
                 {isOnline ? "Online" : "Offline"}
               </span>
               <span className="text-[10px] text-slate-400 dark:text-[#4a7a5a] font-mono">{currentTime}</span>
+              <span className="text-[10px] text-slate-400 dark:text-[#4a7a5a] font-mono">· Late after {cutoffStr}</span>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           {queuedCount > 0 && (
-            <span className="badge-amber text-[10px] font-mono">
-              {queuedCount} queued
-            </span>
+            <span className="badge-amber text-[10px] font-mono">{queuedCount} queued</span>
           )}
           <div className="flex items-center gap-1.5 text-xs font-mono text-slate-600 dark:text-green-300">
             <Users size={13} />
             {scanCount}
           </div>
-          <ThemeToggle compact />
-          <button onClick={handleSignOut} className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors" title="Sign out">
-            <LogOut size={15} />
+          <button
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-green-950/30 transition-colors"
+            title={soundEnabled ? "Mute sounds" : "Enable sounds"}
+          >
+            {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
           </button>
+          <ThemeToggle compact />
+          {!isPublicScanner && (
+            <button
+              onClick={handleSignOut}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+              title="Sign out"
+            >
+              <LogOut size={15} />
+            </button>
+          )}
         </div>
       </div>
 
+      {/* Offline banner */}
       {!isOnline && (
         <div className="bg-amber-500 text-white text-xs py-2 px-4 text-center font-medium">
-          📡 Offline mode — scans are being queued and will sync when you reconnect
+          📡 Offline — scans are being queued and will sync when you reconnect
         </div>
       )}
 
+      {/* Scanner area */}
       <div className="flex-1 max-w-sm mx-auto w-full px-4 py-6 space-y-4">
         <div className="card overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[#bbf7d0] dark:border-[#1a3a24] bg-green-50 dark:bg-green-950/20">
             <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+              <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-75", processing ? "bg-amber-400" : "bg-green-400")} />
+              <span className={cn("relative inline-flex rounded-full h-2.5 w-2.5", processing ? "bg-amber-500" : "bg-green-500")} />
             </span>
             <span className="text-xs font-medium text-green-700 dark:text-green-300">
-              {processing ? "Processing scan…" : "Scanner ready — hold QR card up to camera"}
+              {processing ? "Processing…" : "Scanner ready — hold QR card up to camera"}
             </span>
           </div>
 
@@ -461,23 +518,21 @@ export function ScannerClient({
           </div>
         </div>
 
+        {/* Scan result */}
         {scanResult && (() => {
           const cfg = resultConfig[scanResult.type];
           const Icon = cfg.icon;
           return (
-            <div className={cn("card p-4 border flex items-start gap-4 animate-in fade-in-0 duration-300", cfg.bg)}>
+            <div className={cn("card p-4 border flex items-start gap-4 animate-in fade-in-0 slide-in-from-bottom-2 duration-300", cfg.bg)}>
               <div className="w-12 h-12 rounded-full bg-white/60 dark:bg-black/20 flex items-center justify-center shrink-0">
                 <Icon size={24} className={cfg.iconColor} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className={cn("text-sm font-bold", cfg.labelColor)}>{cfg.label}</p>
                 <p className="text-base font-semibold text-slate-900 dark:text-white truncate">{scanResult.name}</p>
-                {scanResult.className && (
-                  <p className="text-xs text-slate-500 dark:text-[#6b9e7a]">{scanResult.className}</p>
-                )}
-                {scanResult.message && (
-                  <p className="text-xs text-slate-500 dark:text-[#6b9e7a] mt-0.5">{scanResult.message}</p>
-                )}
+                {scanResult.className && <p className="text-xs text-slate-500 dark:text-[#6b9e7a]">{scanResult.className}</p>}
+                {scanResult.message && <p className="text-xs text-slate-500 dark:text-[#6b9e7a] mt-0.5">{scanResult.message}</p>}
+                {scanResult.lateReason && <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">Reason: {scanResult.lateReason}</p>}
                 <p className="text-xs text-slate-400 dark:text-[#4a7a5a] mt-0.5 font-mono">{scanResult.time}</p>
               </div>
             </div>
@@ -485,10 +540,11 @@ export function ScannerClient({
         })()}
 
         <div className="text-center text-xs text-slate-400 dark:text-[#4a7a5a] font-mono">
-          {scanCount} scan{scanCount !== 1 ? "s" : ""} logged today · {cachedMembers.length} students cached
+          {scanCount} scan{scanCount !== 1 ? "s" : ""} this session · {cachedMembers.length} students cached
         </div>
       </div>
 
+      {/* Late reason modal */}
       {showLateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="card w-full max-w-sm p-6 space-y-4">
@@ -498,13 +554,13 @@ export function ScannerClient({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Late Arrival</h3>
-                <p className="text-xs text-slate-500 dark:text-[#6b9e7a]">{pendingLate?.name}</p>
+                <p className="text-xs text-slate-500 dark:text-[#6b9e7a]">{pendingLate?.name} · after {cutoffStr}</p>
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-700 dark:text-green-200 mb-2">
-                Reason for lateness <span className="text-slate-400">(optional)</span>
+                Reason <span className="text-slate-400">(optional)</span>
               </label>
               <div className="grid grid-cols-2 gap-2 mb-3">
                 {LATE_REASONS.map((r) => (
@@ -514,8 +570,8 @@ export function ScannerClient({
                     className={cn(
                       "px-3 py-2 rounded-lg text-xs font-medium border transition-all",
                       lateReason === r
-                        ? "bg-amber-100 dark:bg-amber-900/30 border-amber-400 dark:border-amber-600 text-amber-700 dark:text-amber-300"
-                        : "border-[#bbf7d0] dark:border-[#1a3a24] text-slate-600 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-950/20"
+                        ? "bg-amber-100 dark:bg-amber-900/30 border-amber-400 text-amber-700 dark:text-amber-300"
+                        : "border-[#bbf7d0] dark:border-[#1a3a24] text-slate-600 dark:text-green-300 hover:bg-amber-50"
                     )}
                   >
                     {r}
@@ -523,7 +579,7 @@ export function ScannerClient({
                 ))}
               </div>
               <input
-                className="input-base"
+                className="input-base text-xs"
                 placeholder="Or type a custom reason…"
                 value={lateReason}
                 onChange={(e) => setLateReason(e.target.value)}
