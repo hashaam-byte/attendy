@@ -1,15 +1,22 @@
 "use client";
-// src/app/[slug]/login/page.tsx — ATTENDY-EDU
-// School-specific login page at /<slug>/login
+// src/app/[slug]/login/page.tsx — ATTENDY-EDU v3
+// Shows org logo + name. Validates slug server-side on load.
+// Redirects to /[slug]/dashboard on success.
 
-import { useState, useEffect, Suspense, use } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Eye, EyeOff, Loader2, GraduationCap, QrCode, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Loader2, GraduationCap, QrCode, AlertCircle, ArrowLeft } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/lib/utils";
+import Image from "next/image";
+import Link from "next/link";
 
-type OrgInfo = { name: string } | null;
+type OrgInfo = {
+  name: string;
+  logoUrl: string | null;
+  primaryColor: string;
+} | null;
 
 function LoginForm({ slug }: { slug: string }) {
   const router = useRouter();
@@ -24,30 +31,18 @@ function LoginForm({ slug }: { slug: string }) {
   const [fetchingOrg, setFetchingOrg] = useState(true);
 
   useEffect(() => {
-    // Guard: slug must be a real string before we hit the API
-    if (!slug || typeof slug !== "string") return;
-
-    let cancelled = false;
     setFetchingOrg(true);
-
     fetch(`/api/check-org?slug=${encodeURIComponent(slug)}`)
-      .then(r => r.json())
-      .then(d => {
-        if (cancelled) return;
+      .then((r) => r.json())
+      .then((d) => {
         if (!d.exists) { router.replace(`/not-found-org?slug=${encodeURIComponent(slug)}`); return; }
         if (d.suspended) { router.replace(`/suspended?slug=${encodeURIComponent(slug)}`); return; }
         if (d.expired) { router.replace(`/expired?slug=${encodeURIComponent(slug)}`); return; }
-        setOrgInfo({ name: d.name });
+        setOrgInfo({ name: d.name, logoUrl: d.logoUrl || null, primaryColor: d.primaryColor || "#16a34a" });
       })
-      .catch(() => {
-        if (!cancelled) setError("Could not verify school. Check your connection.");
-      })
-      .finally(() => {
-        if (!cancelled) setFetchingOrg(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [slug]); // slug is now a stable string, so this only runs once
+      .catch(() => setError("Could not verify school. Check your connection."))
+      .finally(() => setFetchingOrg(false));
+  }, [slug, router]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -87,18 +82,20 @@ function LoginForm({ slug }: { slug: string }) {
 
     if (!org?.is_active) {
       await supabase.auth.signOut();
-      setError("Your school account has been suspended. Contact Attendy support.");
+      setError("This school account has been suspended. Contact Attendy support.");
       setLoading(false);
       return;
     }
 
+    // ── CRITICAL: Verify user belongs to THIS slug ──
     if (org?.slug !== slug) {
       await supabase.auth.signOut();
-      setError("This account does not belong to this school. Use your own school's login page.");
+      setError(`This account belongs to a different school. Please use your own school's login page.`);
       setLoading(false);
       return;
     }
 
+    // Route based on role
     if (orgUser.role === "gateman") {
       router.push(`/${slug}/scanner`);
     } else {
@@ -106,6 +103,8 @@ function LoginForm({ slug }: { slug: string }) {
     }
     router.refresh();
   }
+
+  const primaryColor = orgInfo?.primaryColor || "#16a34a";
 
   if (fetchingOrg) {
     return (
@@ -118,37 +117,89 @@ function LoginForm({ slug }: { slug: string }) {
 
   return (
     <div className="w-full max-w-md">
+      {/* Back link */}
+      <Link
+        href="/"
+        className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-green-600 dark:hover:text-green-400 transition-colors mb-6"
+      >
+        <ArrowLeft size={14} />
+        Back to home
+      </Link>
+
+      {/* School branding */}
       <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-green-600 shadow-lg shadow-green-500/30 mb-4">
-          <GraduationCap size={30} className="text-white" />
+        <div
+          className="inline-flex items-center justify-center w-16 h-16 rounded-2xl shadow-lg mb-4 overflow-hidden"
+          style={{ backgroundColor: orgInfo?.logoUrl ? "white" : primaryColor }}
+        >
+          {orgInfo?.logoUrl ? (
+            <Image
+              src={orgInfo.logoUrl}
+              alt={orgInfo.name}
+              width={64}
+              height={64}
+              className="w-full h-full object-contain p-1"
+            />
+          ) : (
+            <GraduationCap size={30} className="text-white" />
+          )}
         </div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{orgInfo?.name ?? "School Portal"}</h1>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+          {orgInfo?.name ?? "School Portal"}
+        </h1>
         <p className="text-sm text-slate-500 dark:text-[#6b9e7a] mt-1">Staff Sign In</p>
         <p className="text-[11px] font-mono text-slate-400 dark:text-[#4a7a5a] mt-1">{slug}</p>
       </div>
 
       <div className="card p-8 shadow-xl shadow-green-500/5">
-        <div className="mb-5 p-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900/40">
+        {/* Info banner */}
+        <div className="mb-5 p-3 rounded-lg border" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}30` }}>
           <div className="flex items-start gap-2">
-            <QrCode size={14} className="text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
-            <p className="text-xs text-green-700 dark:text-green-300">Sign in as <strong>Admin</strong>, <strong>Teacher</strong>, or <strong>Gateman</strong>.</p>
+            <QrCode size={14} className="shrink-0 mt-0.5" style={{ color: primaryColor }} />
+            <p className="text-xs" style={{ color: primaryColor }}>
+              Sign in as <strong>Admin</strong>, <strong>Teacher</strong>, or <strong>Gateman</strong>.
+              Parents use the <a href="/portal" className="underline font-semibold">Parent Portal</a>.
+            </p>
           </div>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-700 dark:text-green-200 mb-1.5">Email address</label>
-            <input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)}
-              placeholder={`admin@${slug}.edu.ng`} required autoComplete="email" className="input-base" />
+            <label htmlFor="email" className="block text-sm font-medium text-slate-700 dark:text-green-200 mb-1.5">
+              Email address
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder={`admin@${slug}.edu.ng`}
+              required
+              autoComplete="email"
+              className="input-base"
+            />
           </div>
+
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-700 dark:text-green-200 mb-1.5">Password</label>
+            <label htmlFor="password" className="block text-sm font-medium text-slate-700 dark:text-green-200 mb-1.5">
+              Password
+            </label>
             <div className="relative">
-              <input id="password" type={showPw ? "text" : "password"} value={password}
-                onChange={e => setPassword(e.target.value)} placeholder="••••••••••"
-                required autoComplete="current-password" className="input-base pr-10" />
-              <button type="button" onClick={() => setShowPw(!showPw)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-green-300 transition-colors">
+              <input
+                id="password"
+                type={showPw ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••••"
+                required
+                autoComplete="current-password"
+                className="input-base pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw(!showPw)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-green-300 transition-colors"
+              >
                 {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
@@ -161,35 +212,47 @@ function LoginForm({ slug }: { slug: string }) {
             </div>
           )}
 
-          <button type="submit" disabled={loading || !email || !password}
-            className={cn("btn-primary w-full py-3", loading && "opacity-75")}>
-            {loading ? <><Loader2 size={16} className="animate-spin" /> Signing in…</> : "Sign in to school portal"}
+          <button
+            type="submit"
+            disabled={loading || !email || !password}
+            className={cn("w-full py-3 rounded-xl font-semibold text-white transition-all", loading && "opacity-75")}
+            style={{ backgroundColor: primaryColor }}
+          >
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <Loader2 size={16} className="animate-spin" />
+                Signing in…
+              </span>
+            ) : (
+              "Sign in to school portal"
+            )}
           </button>
         </form>
 
-        <p className="text-center text-xs text-slate-400 dark:text-[#4a7a5a] mt-6">
-          Parent? <a href="/portal" className="text-green-600 dark:text-green-400 hover:underline font-medium">Use the Parent Portal</a>
-        </p>
-        <p className="text-center text-xs text-slate-400 dark:text-[#4a7a5a] mt-2">
-          Wrong school? <a href="/login" className="text-green-600 dark:text-green-400 hover:underline font-medium">Search again</a>
-        </p>
+        <div className="flex items-center justify-between mt-6 text-xs text-slate-400 dark:text-[#4a7a5a]">
+          <a href="/portal" style={{ color: primaryColor }} className="hover:underline font-medium">
+            Parent Portal →
+          </a>
+          <a href="/login" className="hover:text-green-600 dark:hover:text-green-400 transition-colors">
+            Wrong school?
+          </a>
+        </div>
       </div>
-      <p className="text-center text-xs text-slate-400 dark:text-[#4a7a5a] mt-6">Powered by Attendy · Built for Nigerian Schools</p>
+
+      <p className="text-center text-xs text-slate-400 dark:text-[#4a7a5a] mt-6">
+        Powered by Attendy · Built for Nigerian Schools
+      </p>
     </div>
   );
 }
 
-// In Next.js 16, params is a Promise — must be unwrapped with React.use()
-// in client components (can't use await in "use client" page exports).
-export default function SlugLoginPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = use(params);
-
+export default function SlugLoginPage({ params }: { params: { slug: string } }) {
   return (
     <div className="min-h-screen flex flex-col bg-[var(--bg-base)]">
       <div className="absolute top-4 right-4 z-10"><ThemeToggle /></div>
       <div className="flex-1 flex items-center justify-center px-4 py-12">
         <Suspense fallback={<div className="flex justify-center"><Loader2 size={28} className="animate-spin text-green-500" /></div>}>
-          <LoginForm slug={slug} />
+          <LoginForm slug={params.slug} />
         </Suspense>
       </div>
     </div>

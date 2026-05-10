@@ -1,8 +1,8 @@
 // src/app/[slug]/dashboard/page.tsx — ATTENDY-EDU v3
 // Full dashboard: stats, scan feed, absent list, welfare alerts, quick actions
-// Auth & org validation is handled entirely by [slug]/layout.tsx — no need to repeat it here.
 
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
   Users, UserCheck, UserX, Clock, TrendingUp,
@@ -20,19 +20,17 @@ export default async function DashboardPage({
 }) {
   const { slug } = await params;
   const supabase = await createClient();
-
-  // Layout already verified the user & org. We only need the org_id here.
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect(`/${slug}/login`);
+
   const { data: orgUser } = await supabase
     .from("org_users")
     .select("role, organisation_id")
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .eq("is_active", true)
     .single();
 
-  // orgUser will always exist at this point (layout already checked),
-  // but TypeScript needs the guard.
-  if (!orgUser) return null;
+  if (!orgUser) redirect(`/${slug}/login`);
 
   const orgId = orgUser.organisation_id;
   const today = new Date().toISOString().split("T")[0];

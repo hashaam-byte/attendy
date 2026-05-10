@@ -19,12 +19,7 @@ export default async function SlugDashboardLayout({
   const supabase = await createClient();
 
   // 1. Verify user is logged in
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  // Not logged in → send to login. proxy.ts also does this but layout is
-  // the authoritative check so we keep it here too.
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect(`/${slug}/login`);
 
   // 2. Get org_user with full org details
@@ -41,11 +36,6 @@ export default async function SlugDashboardLayout({
     .eq("is_active", true)
     .single();
 
-  // No org_user record → sign out and send to login.
-  // IMPORTANT: Do NOT redirect to /${slug}/login here — that would loop
-  // if proxy.ts is also redirecting logged-in users away from /login.
-  // Instead sign out first so proxy sees an unauthenticated user and
-  // lets them reach the login page cleanly.
   if (!orgUser) {
     await supabase.auth.signOut();
     redirect(`/${slug}/login`);
@@ -94,12 +84,7 @@ export default async function SlugDashboardLayout({
         {/* Inject org primary color as CSS variable */}
         <style>{`:root { --org-color: ${primaryColor}; --org-color-light: ${primaryColor}20; --org-color-border: ${primaryColor}40; }`}</style>
 
-        <SlugSidebar
-          slug={slug}
-          role={orgUser.role}
-          orgName={org.name}
-          primaryColor={primaryColor}
-        />
+        <SlugSidebar slug={slug} role={orgUser.role} orgName={org.name} primaryColor={primaryColor} />
 
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <SlugTopbar
