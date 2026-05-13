@@ -24,7 +24,7 @@ export default async function RootPage({
     if (org.plan_expires_at && new Date(org.plan_expires_at) < new Date()) {
       redirect(`/expired?slug=${encodeURIComponent(slug)}`);
     }
-    redirect(`/login?school=${encodeURIComponent(slug)}`);
+    redirect(`/${encodeURIComponent(slug)}/login`);
   }
 
   // No slug — check if already logged in

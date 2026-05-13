@@ -3,7 +3,7 @@
 // Shows org logo + name. Validates slug server-side on load.
 // Redirects to /[slug]/dashboard on success.
 
-import { useState, useEffect, Suspense } from "react";
+import { use, useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Eye, EyeOff, Loader2, GraduationCap, QrCode, AlertCircle, ArrowLeft } from "lucide-react";
@@ -233,7 +233,7 @@ function LoginForm({ slug }: { slug: string }) {
           <a href="/portal" style={{ color: primaryColor }} className="hover:underline font-medium">
             Parent Portal →
           </a>
-          <a href="/login" className="hover:text-green-600 dark:hover:text-green-400 transition-colors">
+          <a href="/" className="hover:text-green-600 dark:hover:text-green-400 transition-colors">
             Wrong school?
           </a>
         </div>
@@ -246,13 +246,15 @@ function LoginForm({ slug }: { slug: string }) {
   );
 }
 
-export default function SlugLoginPage({ params }: { params: { slug: string } }) {
+export default function SlugLoginPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params) as { slug: string };
+
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--bg-base)]">
+    <div className="min-h-screen flex flex-col bg-(--bg-base)">
       <div className="absolute top-4 right-4 z-10"><ThemeToggle /></div>
       <div className="flex-1 flex items-center justify-center px-4 py-12">
         <Suspense fallback={<div className="flex justify-center"><Loader2 size={28} className="animate-spin text-green-500" /></div>}>
-          <LoginForm slug={params.slug} />
+          <LoginForm slug={slug} />
         </Suspense>
       </div>
     </div>

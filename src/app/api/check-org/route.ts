@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   const { data } = await service
     .from("organisations")
-    .select("id, name, is_active, industry, plan_expires_at")
+    .select("id, name, is_active, industry, plan_expires_at, logo_url, primary_color")
     .eq("slug", slug.toLowerCase().trim())
     .eq("industry", "education")
     .single();
@@ -35,6 +35,8 @@ export async function GET(req: NextRequest) {
     {
       exists: true,
       name: data.name,
+      logoUrl: data.logo_url || null,
+      primaryColor: data.primary_color || "#16a34a",
       suspended: !data.is_active,
       expired: isExpired ?? false,
     },
