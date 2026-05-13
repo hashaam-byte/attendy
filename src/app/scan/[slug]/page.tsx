@@ -2,7 +2,7 @@
 // Public scanner — no login required. Used by gatemen on shared tablets.
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
-import { ScannerClient } from "@/app/[slug]/scanner/scanner-client";
+import { ScannerClient } from "@/app/[slug]/(dashboard)/scanner/scanner-client";
 
 export const dynamic = "force-dynamic";
 
