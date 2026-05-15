@@ -1,8 +1,9 @@
 "use client";
+// src/app/[slug]/(dashboard)/students/students-client.tsx — ATTENDY-EDU v3
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { Search, QrCode, UserCheck, UserX, Eye } from "lucide-react";
+import { Search, QrCode, Eye } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 
 type Student = {
@@ -17,19 +18,16 @@ type Student = {
   created_at: string;
 };
 
-export function StudentsClient({
-  students,
-  orgId,
-  role,
-  maxMembers,
-  activeCount,
-}: {
+interface Props {
   students: Student[];
   orgId: string;
   role: string;
   maxMembers: number;
   activeCount: number;
-}) {
+  slug: string;
+}
+
+export function StudentsClient({ students, orgId, role, maxMembers, activeCount, slug }: Props) {
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("active");
@@ -39,23 +37,22 @@ export function StudentsClient({
     return ["all", ...Array.from(set).sort()];
   }, [students]);
 
-  const filtered = useMemo(() => {
-    return students.filter((s) => {
+  const filtered = useMemo(() =>
+    students.filter((s) => {
       const matchSearch =
         !search ||
         s.full_name.toLowerCase().includes(search.toLowerCase()) ||
         (s.class_name ?? "").toLowerCase().includes(search.toLowerCase()) ||
         (s.employee_id ?? "").toLowerCase().includes(search.toLowerCase()) ||
         (s.parent_phone ?? "").includes(search);
-
       const matchClass = classFilter === "all" || s.class_name === classFilter;
       const matchStatus =
         statusFilter === "all" ||
         (statusFilter === "active" ? s.is_active : !s.is_active);
-
       return matchSearch && matchClass && matchStatus;
-    });
-  }, [students, search, classFilter, statusFilter]);
+    }),
+    [students, search, classFilter, statusFilter]
+  );
 
   return (
     <div className="space-y-4">
@@ -70,22 +67,12 @@ export function StudentsClient({
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-
-        <select
-          value={classFilter}
-          onChange={(e) => setClassFilter(e.target.value)}
-          className="input-base w-auto"
-        >
+        <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)} className="input-base w-auto">
           {classes.map((c) => (
             <option key={c} value={c}>{c === "all" ? "All Classes" : c}</option>
           ))}
         </select>
-
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="input-base w-auto"
-        >
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input-base w-auto">
           <option value="all">All Status</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
@@ -96,7 +83,6 @@ export function StudentsClient({
         Showing {filtered.length} of {students.length} students
       </p>
 
-      {/* Table */}
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -120,17 +106,13 @@ export function StudentsClient({
                       <div>
                         <p className="font-medium text-slate-900 dark:text-white">{student.full_name}</p>
                         {student.employee_id && (
-                          <p className="text-[10px] font-mono text-slate-400 dark:text-[#4a7a5a]">
-                            {student.employee_id}
-                          </p>
+                          <p className="text-[10px] font-mono text-slate-400 dark:text-[#4a7a5a]">{student.employee_id}</p>
                         )}
                       </div>
                     </div>
                   </td>
                   <td className="table-td">
-                    {student.class_name ? (
-                      <span className="badge-green">{student.class_name}</span>
-                    ) : "—"}
+                    {student.class_name ? <span className="badge-green">{student.class_name}</span> : "—"}
                   </td>
                   <td className="table-td hidden md:table-cell font-mono text-xs">
                     {student.parent_phone ?? "—"}
@@ -142,25 +124,20 @@ export function StudentsClient({
                   </td>
                   <td className="table-td">
                     <div className="flex items-center gap-1">
-                      <Link
-                        href={`/students/${student.id}`}
+                      <Link href={`/${slug}/students/${student.id}`}
                         className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-950/30 text-slate-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
-                        title="View profile"
-                      >
+                        title="View profile">
                         <Eye size={14} />
                       </Link>
-                      <Link
-                        href={`/students/${student.id}/qr`}
+                      <Link href={`/${slug}/qr-cards?id=${student.id}`}
                         className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-950/30 text-slate-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
-                        title="View QR card"
-                      >
+                        title="QR Card">
                         <QrCode size={14} />
                       </Link>
                     </div>
                   </td>
                 </tr>
               ))}
-
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-5 py-12 text-center">
@@ -172,7 +149,7 @@ export function StudentsClient({
                           : "No students yet. Add your first student."}
                       </p>
                       {!search && students.length === 0 && (
-                        <Link href="/students/register" className="btn-primary mt-3 inline-flex">
+                        <Link href={`/${slug}/students/register`} className="btn-primary mt-3 inline-flex">
                           Add First Student
                         </Link>
                       )}

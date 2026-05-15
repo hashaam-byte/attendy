@@ -1,3 +1,4 @@
+// src/app/[slug]/(dashboard)/reports/page.tsx — ATTENDY-EDU v3
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { format, subDays } from "date-fns";
@@ -5,10 +6,15 @@ import { ReportsClient } from "./reports-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReportsPage() {
+export default async function ReportsPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(`/${slug}/login`);
 
   const { data: orgUser } = await supabase
     .from("org_users")
@@ -16,14 +22,13 @@ export default async function ReportsPage() {
     .eq("user_id", user.id)
     .eq("is_active", true)
     .single();
+  if (!orgUser) redirect(`/${slug}/login`);
 
-  if (!orgUser) redirect("/login");
   const orgId = orgUser.organisation_id;
-
   const today = new Date().toISOString().split("T")[0];
   const sevenDaysAgo = format(subDays(new Date(), 6), "yyyy-MM-dd");
 
-  const [{ data: todayLogs }, { data: weeklyData }, { data: classes }] = await Promise.all([
+  const [{ data: todayLogs }, { data: weeklyData }, { data: allStudents }] = await Promise.all([
     supabase
       .from("attendance_logs")
       .select("id, scanned_at, status, scan_type, late_reason, members(full_name, class_name)")
@@ -48,16 +53,13 @@ export default async function ReportsPage() {
       .eq("member_type", "student"),
   ]);
 
-  // FIX: normalize members (Supabase returns array)
-  const normalizedTodayLogs =
-    (todayLogs ?? []).map((log) => ({
-      ...log,
-      members: Array.isArray(log.members)
-        ? log.members[0] ?? null
-        : log.members,
-    }));
+  // Normalize members field (Supabase may return array)
+  const normalizedLogs = (todayLogs ?? []).map((log) => ({
+    ...log,
+    members: Array.isArray(log.members) ? log.members[0] ?? null : log.members,
+  }));
 
-  // Build 7-day chart data
+  // Build 7-day chart
   const dayMap: Record<string, { present: number; late: number }> = {};
   (weeklyData ?? []).forEach((log) => {
     const d = log.scanned_at.split("T")[0];
@@ -76,19 +78,16 @@ export default async function ReportsPage() {
   });
 
   const uniqueClasses = [
-    ...new Set(
-      (classes ?? [])
-        .map((c) => c.class_name)
-        .filter(Boolean) as string[]
-    ),
+    ...new Set((allStudents ?? []).map((c) => c.class_name).filter(Boolean) as string[]),
   ].sort();
 
   return (
     <ReportsClient
       orgId={orgId}
-      todayLogs={normalizedTodayLogs}
+      todayLogs={normalizedLogs}
       chartData={chartData}
       classes={uniqueClasses}
+      slug={slug}
     />
   );
 }

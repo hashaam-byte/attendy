@@ -1,34 +1,21 @@
+// src/app/[slug]/(dashboard)/students/[id]/page.tsx — ATTENDY-EDU v3
 import { createClient } from "@/lib/supabase/server";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, QrCode, Phone } from "lucide-react";
+import { ArrowLeft, QrCode, Phone, MessageSquare } from "lucide-react";
 import { cn, formatDateTime, formatDate, getInitials } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-type AttendanceLog = {
-  id: string;
-  scanned_at: string;
-  status: string;
-  scan_type: string;
-  late_reason: string | null;
-};
-
-type Student = {
-  id: string;
-  full_name: string;
-  class_name: string | null;
-  parent_phone: string | null;
-  employee_id: string | null;
-  is_active: boolean;
-  notes: string | null;
-};
-
-export default async function StudentProfilePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function StudentProfilePage({
+  params,
+}: {
+  params: Promise<{ slug: string; id: string }>;
+}) {
+  const { slug, id } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(`/${slug}/login`);
 
   const { data: orgUser } = await supabase
     .from("org_users")
@@ -36,20 +23,17 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
     .eq("user_id", user.id)
     .eq("is_active", true)
     .single();
+  if (!orgUser) redirect(`/${slug}/login`);
 
-  if (!orgUser) redirect("/login");
-
-  const { data: studentData } = await supabase
+  const { data: student } = await supabase
     .from("members")
-    .select("id, full_name, class_name, parent_phone, employee_id, is_active, notes")
+    .select("id, full_name, class_name, parent_phone, employee_id, is_active, notes, photo_url, created_at")
     .eq("id", id)
     .eq("organisation_id", orgUser.organisation_id)
     .eq("member_type", "student")
     .single();
 
-  if (!studentData) notFound();
-
-  const student = studentData as Student;
+  if (!student) notFound();
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
@@ -59,8 +43,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
       .select("id, scanned_at, status, scan_type, late_reason")
       .eq("member_id", id)
       .order("scanned_at", { ascending: false })
-      .limit(20),
-
+      .limit(30),
     supabase
       .from("attendance_logs")
       .select("*", { count: "exact", head: true })
@@ -68,7 +51,6 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
       .eq("scan_type", "entry")
       .eq("status", "present")
       .gte("scanned_at", `${thirtyDaysAgo}T00:00:00`),
-
     supabase
       .from("attendance_logs")
       .select("*", { count: "exact", head: true })
@@ -78,89 +60,111 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
       .gte("scanned_at", `${thirtyDaysAgo}T00:00:00`),
   ]);
 
-  const typedLogs = (recentLogs ?? []) as AttendanceLog[];
-  const totalLogDays = (presentCount ?? 0) + (lateCount ?? 0);
-  const attendancePct = totalLogDays > 0 ? Math.round(((presentCount ?? 0) / totalLogDays) * 100) : 0;
+  const totalScanned = (presentCount ?? 0) + (lateCount ?? 0);
+  const attendancePct = totalScanned > 0 ? Math.round(((presentCount ?? 0) / totalScanned) * 100) : 0;
+  const today = new Date().toISOString().split("T")[0];
+  const todayLog = (recentLogs ?? []).find((l) => l.scanned_at.startsWith(today));
 
   return (
     <div className="max-w-3xl space-y-5">
       <div className="flex items-center gap-3">
-        <Link href="/students" className="btn-ghost p-2">
-          <ArrowLeft size={16} />
-        </Link>
+        <Link href={`/${slug}/students`} className="btn-ghost p-2"><ArrowLeft size={16} /></Link>
         <div className="flex-1 min-w-0">
           <h2 className="page-title">{student.full_name}</h2>
-          <p className="page-sub capitalize">{student.class_name ?? "No class"}</p>
+          <p className="page-sub">{student.class_name ?? "No class"}</p>
         </div>
-        <Link href={`/students/${id}/qr`} className="btn-primary">
-          <QrCode size={15} />
-          QR Card
+        <Link href={`/${slug}/qr-cards?id=${id}`} className="btn-primary">
+          <QrCode size={15} />QR Card
         </Link>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Profile card */}
         <div className="card p-5 sm:col-span-1 flex flex-col items-center text-center gap-3">
-          <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center text-xl font-bold text-green-700 dark:text-green-400">
-            {getInitials(student.full_name)}
+          <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center text-2xl font-bold text-green-700 dark:text-green-400 overflow-hidden">
+            {student.photo_url
+              ? <img src={student.photo_url} alt={student.full_name} className="w-full h-full object-cover" />
+              : getInitials(student.full_name)
+            }
           </div>
           <div>
             <p className="font-semibold text-slate-900 dark:text-white">{student.full_name}</p>
             {student.employee_id && (
-              <p className="text-xs font-mono text-slate-400 dark:text-[#4a7a5a]">{student.employee_id}</p>
+              <p className="text-xs font-mono text-slate-400 dark:text-[#4a7a5a] mt-0.5">{student.employee_id}</p>
             )}
-            <span className={cn("badge mt-1", student.is_active ? "badge-green" : "badge-red")}>
-              {student.is_active ? "Active" : "Inactive"}
-            </span>
+            <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
+              <span className={cn("badge", student.is_active ? "badge-green" : "badge-red")}>
+                {student.is_active ? "Active" : "Inactive"}
+              </span>
+              {todayLog && (
+                <span className={cn("badge", todayLog.status === "present" ? "badge-green" : "badge-amber")}>
+                  {todayLog.status === "present" ? "✓ Today" : "Late today"}
+                </span>
+              )}
+            </div>
           </div>
-          {student.class_name && (
-            <span className="badge-blue">{student.class_name}</span>
-          )}
+          {student.class_name && <span className="badge-blue">{student.class_name}</span>}
           {student.parent_phone && (
-            <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-green-200">
-              <Phone size={12} className="text-slate-400 dark:text-[#4a7a5a]" />
-              <a href={`tel:${student.parent_phone}`} className="hover:text-green-600 dark:hover:text-green-400">
-                {student.parent_phone}
+            <div className="w-full space-y-1.5">
+              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-[#6b9e7a]">
+                <Phone size={11} />
+                <a href={`tel:${student.parent_phone}`} className="hover:text-green-600 font-mono">{student.parent_phone}</a>
+              </div>
+              <a href={`https://wa.me/${student.parent_phone.replace(/\D/g,"")}?text=${encodeURIComponent(`Hello, this is regarding ${student.full_name}.`)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1.5 text-xs text-green-600 dark:text-green-400 hover:underline">
+                <MessageSquare size={11} />WhatsApp parent
               </a>
             </div>
           )}
+          {student.notes && (
+            <p className="text-xs text-slate-400 dark:text-[#4a7a5a] bg-slate-50 dark:bg-[#1a3a24]/50 rounded-lg p-2 w-full text-left">{student.notes}</p>
+          )}
+          <p className="text-[10px] text-slate-300 dark:text-[#2d5a3d]">Registered {formatDate(student.created_at)}</p>
         </div>
 
-        {/* Stats */}
-        <div className="sm:col-span-2 grid grid-cols-3 gap-3">
-          {[
-            { label: "Present (30d)", value: presentCount ?? 0, color: "text-green-600 dark:text-green-400" },
-            { label: "Late (30d)", value: lateCount ?? 0, color: "text-amber-600 dark:text-amber-400" },
-            { label: "Attendance %", value: `${attendancePct}%`, color: attendancePct >= 75 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400" },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="card p-4 text-center">
-              <p className={cn("text-2xl font-bold", color)}>{value}</p>
-              <p className="text-xs text-slate-400 dark:text-[#4a7a5a] mt-1">{label}</p>
-            </div>
-          ))}
-
-          <div className="col-span-3 card p-4">
+        <div className="sm:col-span-2 space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: "Present (30d)", value: presentCount ?? 0, color: "text-green-600 dark:text-green-400" },
+              { label: "Late (30d)", value: lateCount ?? 0, color: "text-amber-600 dark:text-amber-400" },
+              { label: "Attendance", value: `${attendancePct}%`, color: attendancePct >= 75 ? "text-green-600 dark:text-green-400" : "text-red-500" },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="card p-4 text-center">
+                <p className={cn("text-2xl font-bold", color)}>{value}</p>
+                <p className="text-xs text-slate-400 dark:text-[#4a7a5a] mt-1">{label}</p>
+              </div>
+            ))}
+          </div>
+          <div className="card p-4">
             <div className="flex justify-between text-xs text-slate-500 dark:text-[#6b9e7a] mb-2">
-              <span>Attendance rate (last 30 days)</span>
-              <span className={attendancePct >= 75 ? "text-green-600 dark:text-green-400" : "text-red-500"}>
-                {attendancePct >= 75 ? "✓ Good" : "⚠ Below 75%"}
+              <span>30-day attendance rate</span>
+              <span className={attendancePct >= 75 ? "text-green-600 dark:text-green-400" : "text-red-500 font-semibold"}>
+                {attendancePct >= 75 ? "✓ Good standing" : "⚠ Below 75%"}
               </span>
             </div>
-            <div className="h-2.5 bg-green-100 dark:bg-green-950/30 rounded-full overflow-hidden">
-              <div
-                className={cn("h-full rounded-full transition-all duration-700", attendancePct >= 75 ? "bg-green-500" : "bg-red-500")}
-                style={{ width: `${Math.min(attendancePct, 100)}%` }}
-              />
+            <div className="h-3 bg-green-100 dark:bg-green-950/30 rounded-full overflow-hidden">
+              <div className={cn("h-full rounded-full transition-all duration-700", attendancePct >= 75 ? "bg-green-500" : "bg-red-500")}
+                style={{ width: `${Math.min(attendancePct, 100)}%` }} />
             </div>
+          </div>
+          <div className="card p-4 flex flex-wrap gap-2">
+            <Link href={`/${slug}/qr-cards?id=${id}`} className="btn-primary text-xs py-1.5">
+              <QrCode size={13} />Print QR Card
+            </Link>
+            {student.parent_phone && (
+              <a href={`https://wa.me/${student.parent_phone.replace(/\D/g,"")}?text=${encodeURIComponent(`Hello, regarding ${student.full_name}...`)}`}
+                target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5">
+                <MessageSquare size={13} />Message Parent
+              </a>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Attendance history */}
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#bbf7d0] dark:border-[#1a3a24]">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Attendance History</h3>
-          <span className="text-xs text-slate-400 dark:text-[#4a7a5a]">Last 20 entries</span>
+          <span className="text-xs text-slate-400 dark:text-[#4a7a5a]">Last 30 entries</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -169,37 +173,28 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
                 <th className="table-th">Date &amp; Time</th>
                 <th className="table-th">Type</th>
                 <th className="table-th">Status</th>
-                <th className="table-th hidden sm:table-cell">Reason</th>
+                <th className="table-th hidden sm:table-cell">Note</th>
               </tr>
             </thead>
             <tbody>
-              {typedLogs.map((log) => (
+              {(recentLogs ?? []).map((log) => (
                 <tr key={log.id} className="table-row">
                   <td className="table-td">{formatDateTime(log.scanned_at)}</td>
+                  <td className="table-td"><span className="badge-gray capitalize">{log.scan_type}</span></td>
                   <td className="table-td">
-                    <span className="badge-gray capitalize">{log.scan_type}</span>
-                  </td>
-                  <td className="table-td">
-                    <span className={cn(
-                      "badge",
+                    <span className={cn("badge",
                       log.status === "present" ? "badge-green" :
                       log.status === "late" ? "badge-amber" :
                       log.status === "excused" ? "badge-blue" : "badge-red"
                     )}>
-                      {log.status}
+                      {log.status === "present" ? "On time" : log.status}
                     </span>
                   </td>
-                  <td className="table-td hidden sm:table-cell text-slate-400 dark:text-[#4a7a5a] text-xs">
-                    {log.late_reason ?? "—"}
-                  </td>
+                  <td className="table-td hidden sm:table-cell text-slate-400 dark:text-[#4a7a5a] text-xs">{log.late_reason ?? "—"}</td>
                 </tr>
               ))}
-              {typedLogs.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400 dark:text-[#4a7a5a]">
-                    No attendance records yet.
-                  </td>
-                </tr>
+              {(recentLogs ?? []).length === 0 && (
+                <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400 dark:text-[#4a7a5a]">No records yet.</td></tr>
               )}
             </tbody>
           </table>

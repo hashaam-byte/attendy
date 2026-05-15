@@ -1,14 +1,19 @@
-// src/app/(dashboard)/absent/page.tsx — ATTENDY-EDU
+// src/app/[slug]/(dashboard)/absent/page.tsx — ATTENDY-EDU v3
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { AbsentClient } from "./absent-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function AbsentPage() {
+export default async function AbsentPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(`/${slug}/login`);
 
   const { data: orgUser } = await supabase
     .from("org_users")
@@ -16,8 +21,8 @@ export default async function AbsentPage() {
     .eq("user_id", user.id)
     .eq("is_active", true)
     .single();
+  if (!orgUser) redirect(`/${slug}/login`);
 
-  if (!orgUser) redirect("/login");
   const orgId = orgUser.organisation_id;
   const today = new Date().toISOString().split("T")[0];
 
@@ -49,6 +54,7 @@ export default async function AbsentPage() {
       orgId={orgId}
       role={orgUser.role}
       today={today}
+      slug={slug}
     />
   );
 }

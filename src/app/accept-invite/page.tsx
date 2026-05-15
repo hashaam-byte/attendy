@@ -1,11 +1,11 @@
 "use client";
+// src/app/accept-invite/page.tsx — ATTENDY-EDU v3
+// After invite email link → user sets password → redirect to their school's /${slug}/dashboard
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import {
-  GraduationCap, Loader2, Eye, EyeOff, CheckCircle, AlertCircle,
-} from "lucide-react";
+import { GraduationCap, Loader2, Eye, EyeOff, CheckCircle, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function AcceptInviteForm() {
@@ -20,26 +20,37 @@ function AcceptInviteForm() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [orgSlug, setOrgSlug] = useState<string | null>(null);
 
   useEffect(() => {
-    // Session was already set by /auth/callback — just verify it exists
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUserEmail(session.user.email ?? null);
-      } else {
-        setError(
-          "This invite link has expired or was already used. " +
-          "Please ask your admin to send a new invite."
-        );
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        setError("This invite link has expired or was already used. Ask your admin for a new invite.");
+        setChecking(false);
+        return;
       }
+      setUserEmail(session.user.email ?? null);
+
+      // Look up the user's org slug for redirect
+      const { data: orgUser } = await supabase
+        .from("org_users")
+        .select("organisations(slug)")
+        .eq("user_id", session.user.id)
+        .eq("is_active", true)
+        .single();
+
+      const slug = (orgUser?.organisations as any)?.slug ?? null;
+      setOrgSlug(slug);
       setChecking(false);
-    });
+    })();
   }, []);
 
-  const strengthScore = password.length === 0 ? 0
-    : password.length < 8 ? 1
-    : password.length < 12 ? 2
-    : /[A-Z]/.test(password) && /[0-9]/.test(password) ? 4 : 3;
+  const strengthScore =
+    password.length === 0 ? 0 :
+    password.length < 8 ? 1 :
+    password.length < 12 ? 2 :
+    /[A-Z]/.test(password) && /[0-9]/.test(password) ? 4 : 3;
 
   const strengthLabel = ["", "Too short", "Weak", "Good", "Strong"][strengthScore];
   const strengthColor = ["", "bg-red-400", "bg-amber-400", "bg-blue-400", "bg-green-500"][strengthScore];
@@ -55,9 +66,8 @@ function AcceptInviteForm() {
 
     if (updateError) {
       setError(
-        updateError.message.toLowerCase().includes("session") ||
-        updateError.message.toLowerCase().includes("missing")
-          ? "Your session expired. Please ask your admin for a fresh invite link."
+        updateError.message.toLowerCase().includes("session") || updateError.message.toLowerCase().includes("missing")
+          ? "Your session expired. Ask your admin to send a fresh invite link."
           : updateError.message
       );
       setLoading(false);
@@ -65,7 +75,9 @@ function AcceptInviteForm() {
     }
 
     setDone(true);
-    setTimeout(() => router.push("/dashboard"), 2000);
+    // Redirect to school portal or generic dashboard
+    const target = orgSlug ? `/${orgSlug}/dashboard` : "/dashboard";
+    setTimeout(() => router.push(target), 1800);
   }
 
   if (checking) {
@@ -82,7 +94,9 @@ function AcceptInviteForm() {
       <div className="text-center py-10">
         <CheckCircle size={52} className="text-green-500 mx-auto mb-4" />
         <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Password set!</h2>
-        <p className="text-sm text-slate-500 dark:text-[#6b9e7a]">Taking you to your dashboard…</p>
+        <p className="text-sm text-slate-500 dark:text-[#6b9e7a]">
+          Taking you to {orgSlug ? `${orgSlug}'s dashboard` : "your dashboard"}…
+        </p>
       </div>
     );
   }
@@ -93,7 +107,7 @@ function AcceptInviteForm() {
         <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
         <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Invite link invalid</h2>
         <p className="text-sm text-slate-500 dark:text-[#6b9e7a] mb-6">{error}</p>
-        <a href="/login" className="btn-primary text-sm">Back to login</a>
+        <a href="/" className="btn-primary text-sm inline-flex">Back to home</a>
       </div>
     );
   }
@@ -104,14 +118,12 @@ function AcceptInviteForm() {
         <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Set your password</h2>
         <p className="text-sm text-slate-500 dark:text-[#6b9e7a]">
           {userEmail ? `Welcome, ${userEmail}.` : "You've been invited."}{" "}
-          Choose a password to access your school portal.
+          Choose a password to access {orgSlug ? `${orgSlug}'s school portal` : "your school portal"}.
         </p>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 dark:text-green-200 mb-1.5">
-          New password
-        </label>
+        <label className="block text-sm font-medium text-slate-700 dark:text-green-200 mb-1.5">New password</label>
         <div className="relative">
           <input
             type={showPw ? "text" : "password"}
@@ -141,9 +153,7 @@ function AcceptInviteForm() {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 dark:text-green-200 mb-1.5">
-          Confirm password
-        </label>
+        <label className="block text-sm font-medium text-slate-700 dark:text-green-200 mb-1.5">Confirm password</label>
         <input
           type="password"
           className={cn("input-base", confirmPassword && confirmPassword !== password && "border-red-400")}
@@ -164,9 +174,11 @@ function AcceptInviteForm() {
         </div>
       )}
 
-      <button type="submit"
+      <button
+        type="submit"
         disabled={loading || !password || !confirmPassword || password !== confirmPassword}
-        className={cn("btn-primary w-full py-3", loading && "opacity-75")}>
+        className={cn("btn-primary w-full py-3 justify-center", loading && "opacity-75")}
+      >
         {loading
           ? <><Loader2 size={16} className="animate-spin" /> Setting password…</>
           : "Set password & continue"}
