@@ -1,17 +1,17 @@
 "use client";
-// src/app/[slug]/scanner/scanner-client.tsx — ATTENDY-EDU v3
-// FIXES:
-//   - Late cutoff reads from org.settings (no more hardcoded 8 AM)
-//   - Sign-out goes to /[slug]/login (not /login)
-//   - Public scanner (no session) hides sign-out button
-//   - Success/error animations improved
-//   - Duplicate scan shows original time clearly
+// src/app/[slug]/(dashboard)/scanner/scanner-client.tsx — ATTENDY-EDU v3
+// KEY CHANGES from previous version:
+//   - Member lookup no longer filters by is_active — fetches ALL so we can
+//     distinguish "suspended" (found, inactive) from "deleted" (not found).
+//   - New scan result type: "suspended"
+//   - resultConfig extended with suspended entry (amber/warning style)
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   CheckCircle, Clock, XCircle, AlertCircle, Loader2,
   ScanLine, Wifi, WifiOff, Users, LogOut, Volume2, VolumeX,
+  ShieldOff,
 } from "lucide-react";
 import { cn, formatTime } from "@/lib/utils";
 import dynamic from "next/dynamic";
@@ -34,7 +34,7 @@ const Html5QrScanner = dynamic(
 );
 
 type ScanResult = {
-  type: "success" | "late" | "duplicate" | "error" | "unknown";
+  type: "success" | "late" | "duplicate" | "error" | "unknown" | "suspended";
   name: string;
   className?: string;
   time: string;
@@ -63,7 +63,7 @@ type QueuedScan = {
   queued_at: string;
 };
 
-// ── IndexedDB helpers ────────────────────────────────────────
+// ── IndexedDB helpers ────────────────────────────────────────────
 const DB_NAME = "attendy_offline_v2";
 const STORE = "scan_queue";
 
@@ -137,6 +137,7 @@ export function ScannerClient({
   const [processing, setProcessing] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [scanCount, setScanCount] = useState(0);
+  // Cache includes ALL members (active + inactive) so we can detect suspended
   const [cachedMembers, setCachedMembers] = useState<CachedMember[]>([]);
   const [queuedCount, setQueuedCount] = useState(0);
   const [showLateModal, setShowLateModal] = useState(false);
@@ -148,7 +149,6 @@ export function ScannerClient({
   const lastScannedTimeRef = useRef<number>(0);
   const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Compute late cutoff from org settings (no more hardcoded 8AM!)
   const getCutoff = useCallback(() => {
     const startTime = settings.start_time || "07:30";
     const grace = settings.grace_period_minutes ?? 15;
@@ -172,31 +172,30 @@ export function ScannerClient({
 
   // Online/offline
   useEffect(() => {
-    const onOnline = () => { setIsOnline(true); syncQueue(); };
+    const onOnline  = () => { setIsOnline(true); syncQueue(); };
     const onOffline = () => setIsOnline(false);
-    window.addEventListener("online", onOnline);
+    window.addEventListener("online",  onOnline);
     window.addEventListener("offline", onOffline);
     setIsOnline(navigator.onLine);
     return () => {
-      window.removeEventListener("online", onOnline);
+      window.removeEventListener("online",  onOnline);
       window.removeEventListener("offline", onOffline);
     };
   }, []);
 
-  // Cache member list
+  // Cache ALL members (active AND inactive) so scanner can detect suspension
   useEffect(() => {
     (async () => {
       const { data } = await supabase
         .from("members")
         .select("id, full_name, class_name, parent_phone, organisation_id, is_active, qr_code")
         .eq("organisation_id", orgId)
-        .eq("is_active", true)
         .eq("member_type", "student");
+      // No is_active filter — we need both to distinguish suspended from deleted
       if (data) setCachedMembers(data as CachedMember[]);
     })();
   }, [orgId]);
 
-  // Load queued count
   useEffect(() => {
     getQueuedScans().then((q) => setQueuedCount(q.length));
   }, []);
@@ -207,12 +206,12 @@ export function ScannerClient({
       try {
         const { error } = await supabase.from("attendance_logs").insert({
           organisation_id: value.organisation_id,
-          member_id: value.member_id,
-          scan_type: "entry",
-          status: value.status,
-          late_reason: value.late_reason,
-          device_id: "scanner-offline",
-          scanned_at: value.scanned_at,
+          member_id:       value.member_id,
+          scan_type:       "entry",
+          status:          value.status,
+          late_reason:     value.late_reason,
+          device_id:       "scanner-offline",
+          scanned_at:      value.scanned_at,
         });
         if (!error) await deleteQueuedScan(key);
       } catch {}
@@ -221,79 +220,99 @@ export function ScannerClient({
     setQueuedCount(remaining.length);
   }
 
-  function playBeep(type: "success" | "late" | "error") {
+  function playBeep(type: "success" | "late" | "error" | "warning") {
     if (!soundEnabled || typeof window === "undefined") return;
     try {
-      const ctx = new AudioContext();
-      const osc = ctx.createOscillator();
+      const ctx  = new AudioContext();
+      const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       if (type === "success") {
-        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.setValueAtTime(880,  ctx.currentTime);
         osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
       } else if (type === "late") {
         osc.frequency.setValueAtTime(660, ctx.currentTime);
+      } else if (type === "warning") {
+        // Two-tone warning for suspended
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.frequency.setValueAtTime(330, ctx.currentTime + 0.15);
+        osc.frequency.setValueAtTime(440, ctx.currentTime + 0.3);
       } else {
         osc.frequency.setValueAtTime(220, ctx.currentTime);
         osc.frequency.setValueAtTime(180, ctx.currentTime + 0.1);
       }
 
       gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
       osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.3);
+      osc.stop(ctx.currentTime + 0.4);
     } catch {}
   }
 
   function clearResult() {
     if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
-    clearTimerRef.current = setTimeout(() => setScanResult(null), 4000);
+    // Suspended/error cards stay visible a bit longer
+    clearTimerRef.current = setTimeout(() => setScanResult(null), 5000);
   }
 
   async function handleScan(qrCode: string) {
     if (processing) return;
     const now = Date.now();
     if (qrCode === lastScannedRef.current && now - lastScannedTimeRef.current < 3000) return;
-    lastScannedRef.current = qrCode;
+    lastScannedRef.current     = qrCode;
     lastScannedTimeRef.current = now;
     if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
     setProcessing(true);
     setScanResult(null);
 
     try {
-      // Find member from cache first (offline capable)
+      // ── Look up member from cache (no is_active filter) ──────
       let member: CachedMember | null =
         cachedMembers.find((m) => m.qr_code === qrCode) ?? null;
 
+      // If not in cache and online, fetch WITHOUT is_active filter
       if (!member && isOnline) {
         const { data } = await supabase
           .from("members")
           .select("id, full_name, class_name, parent_phone, organisation_id, is_active, qr_code")
           .eq("qr_code", qrCode)
           .eq("organisation_id", orgId)
-          .single();
+          .maybeSingle();
         member = data as CachedMember | null;
       }
 
+      // ── Not found at all — deleted / wrong school ────────────
       if (!member) {
         playBeep("error");
-        setScanResult({ type: "unknown", name: "Unknown QR", time: new Date().toLocaleTimeString() });
+        setScanResult({
+          type: "unknown",
+          name: "Student Not Found",
+          time: new Date().toLocaleTimeString(),
+          message: "This QR code is not registered in this school.",
+        });
         setProcessing(false);
         clearResult();
         return;
       }
 
+      // ── Found but suspended ──────────────────────────────────
       if (!member.is_active) {
-        playBeep("error");
-        setScanResult({ type: "error", name: member.full_name, className: member.class_name ?? undefined, time: new Date().toLocaleTimeString(), message: "Student account is inactive" });
+        playBeep("warning");
+        setScanResult({
+          type: "suspended",
+          name: member.full_name,
+          className: member.class_name ?? undefined,
+          time: new Date().toLocaleTimeString(),
+          message: "This student has been suspended. Access denied. Please contact the school admin.",
+        });
         setProcessing(false);
         clearResult();
         return;
       }
 
-      // Duplicate check (only online)
+      // ── Duplicate check (online only) ────────────────────────
       if (isOnline) {
         const todayStart = new Date().toISOString().split("T")[0];
         const { data: existing } = await supabase
@@ -308,10 +327,10 @@ export function ScannerClient({
         if (existing && existing.length > 0) {
           playBeep("error");
           setScanResult({
-            type: "duplicate",
-            name: member.full_name,
+            type:    "duplicate",
+            name:    member.full_name,
             className: member.class_name ?? undefined,
-            time: new Date().toLocaleTimeString(),
+            time:    new Date().toLocaleTimeString(),
             message: `Already scanned at ${formatTime(existing[0].scanned_at)}`,
           });
           setProcessing(false);
@@ -320,7 +339,7 @@ export function ScannerClient({
         }
       }
 
-      // Late check using org settings
+      // ── Late check ───────────────────────────────────────────
       const cutoff = getCutoff();
       const isLate = new Date() > cutoff;
 
@@ -341,42 +360,46 @@ export function ScannerClient({
     setProcessing(false);
   }
 
-  async function recordScan(member: CachedMember, status: "present" | "late", reason: string, scannedAt: string) {
+  async function recordScan(
+    member: CachedMember,
+    status: "present" | "late",
+    reason: string,
+    scannedAt: string
+  ) {
     const scanData: QueuedScan = {
       organisation_id: orgId,
-      member_id: member.id,
-      scan_type: "entry",
+      member_id:       member.id,
+      scan_type:       "entry",
       status,
-      late_reason: reason || null,
-      device_id: "scanner-web",
-      scanned_at: scannedAt,
-      queued_at: new Date().toISOString(),
+      late_reason:     reason || null,
+      device_id:       "scanner-web",
+      scanned_at:      scannedAt,
+      queued_at:       new Date().toISOString(),
     };
 
     if (isOnline) {
       const { error } = await supabase.from("attendance_logs").insert({
         organisation_id: scanData.organisation_id,
-        member_id: scanData.member_id,
-        scan_type: scanData.scan_type,
-        status: scanData.status,
-        late_reason: scanData.late_reason,
-        device_id: scanData.device_id,
-        scanned_at: scanData.scanned_at,
+        member_id:       scanData.member_id,
+        scan_type:       scanData.scan_type,
+        status:          scanData.status,
+        late_reason:     scanData.late_reason,
+        device_id:       scanData.device_id,
+        scanned_at:      scanData.scanned_at,
       });
 
       if (error) {
         await queueScan(scanData);
         setQueuedCount((c) => c + 1);
       } else {
-        // Fire-and-forget parent notification
         fetch("/api/notify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            type: "arrival",
-            member_id: member.id,
-            org_id: orgId,
-            is_late: status === "late",
+            type:        "arrival",
+            member_id:   member.id,
+            org_id:      orgId,
+            is_late:     status === "late",
             late_reason: reason,
           }),
         }).catch(() => {});
@@ -389,10 +412,10 @@ export function ScannerClient({
     playBeep(status === "present" ? "success" : "late");
     setScanCount((c) => c + 1);
     setScanResult({
-      type: status === "present" ? "success" : "late",
-      name: member.full_name,
-      className: member.class_name ?? undefined,
-      time: new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }),
+      type:       status === "present" ? "success" : "late",
+      name:       member.full_name,
+      className:  member.class_name ?? undefined,
+      time:       new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }),
       lateReason: reason || undefined,
     });
     clearResult();
@@ -402,13 +425,13 @@ export function ScannerClient({
     if (!pendingLate) return;
     setProcessing(true);
     const member: CachedMember = cachedMembers.find((m) => m.id === pendingLate.memberId) ?? {
-      id: pendingLate.memberId,
-      full_name: pendingLate.name,
-      class_name: null,
-      parent_phone: null,
+      id:              pendingLate.memberId,
+      full_name:       pendingLate.name,
+      class_name:      null,
+      parent_phone:    null,
       organisation_id: orgId,
-      is_active: true,
-      qr_code: "",
+      is_active:       true,
+      qr_code:         "",
     };
     await recordScan(member, "late", lateReason, new Date().toISOString());
     setShowLateModal(false);
@@ -422,21 +445,59 @@ export function ScannerClient({
     router.push(`/${orgSlug}/login`);
   }
 
+  // ── Result display config ────────────────────────────────────
   const resultConfig = {
-    success: { bg: "bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700/50", icon: CheckCircle, iconColor: "text-green-600 dark:text-green-400", label: "✓ On Time", labelColor: "text-green-700 dark:text-green-300" },
-    late: { bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700/50", icon: Clock, iconColor: "text-amber-600 dark:text-amber-400", label: "Late Arrival", labelColor: "text-amber-700 dark:text-amber-300" },
-    duplicate: { bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700/50", icon: AlertCircle, iconColor: "text-blue-600 dark:text-blue-400", label: "Already Scanned", labelColor: "text-blue-700 dark:text-blue-300" },
-    error: { bg: "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-700/50", icon: XCircle, iconColor: "text-red-600 dark:text-red-400", label: "Error", labelColor: "text-red-700 dark:text-red-300" },
-    unknown: { bg: "bg-slate-50 dark:bg-slate-950/30 border-slate-300 dark:border-slate-700/50", icon: XCircle, iconColor: "text-slate-600 dark:text-slate-400", label: "Unknown QR", labelColor: "text-slate-700 dark:text-slate-300" },
+    success: {
+      bg:        "bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700/50",
+      icon:      CheckCircle,
+      iconColor: "text-green-600 dark:text-green-400",
+      label:     "✓ On Time",
+      labelColor:"text-green-700 dark:text-green-300",
+    },
+    late: {
+      bg:        "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700/50",
+      icon:      Clock,
+      iconColor: "text-amber-600 dark:text-amber-400",
+      label:     "Late Arrival",
+      labelColor:"text-amber-700 dark:text-amber-300",
+    },
+    duplicate: {
+      bg:        "bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700/50",
+      icon:      AlertCircle,
+      iconColor: "text-blue-600 dark:text-blue-400",
+      label:     "Already Scanned",
+      labelColor:"text-blue-700 dark:text-blue-300",
+    },
+    suspended: {
+      bg:        "bg-amber-50 dark:bg-amber-950/30 border-amber-400 dark:border-amber-600/60",
+      icon:      ShieldOff,
+      iconColor: "text-amber-600 dark:text-amber-400",
+      label:     "⚠ Student Suspended",
+      labelColor:"text-amber-700 dark:text-amber-300",
+    },
+    error: {
+      bg:        "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-700/50",
+      icon:      XCircle,
+      iconColor: "text-red-600 dark:text-red-400",
+      label:     "Error",
+      labelColor:"text-red-700 dark:text-red-300",
+    },
+    unknown: {
+      bg:        "bg-slate-50 dark:bg-slate-950/30 border-slate-300 dark:border-slate-700/50",
+      icon:      XCircle,
+      iconColor: "text-slate-600 dark:text-slate-400",
+      label:     "Student Not Found",
+      labelColor:"text-slate-700 dark:text-slate-300",
+    },
   };
 
-  // Cutoff time for display
+  // Cutoff display
   const startTime = settings.start_time || "07:30";
-  const grace = settings.grace_period_minutes ?? 15;
-  const [sh, sm] = startTime.split(":").map(Number);
-  const totalM = sh * 60 + sm + grace;
-  const ch = Math.floor(totalM / 60);
-  const cm = totalM % 60;
+  const grace     = settings.grace_period_minutes ?? 15;
+  const [sh, sm]  = startTime.split(":").map(Number);
+  const totalM    = sh * 60 + sm + grace;
+  const ch        = Math.floor(totalM / 60);
+  const cm        = totalM % 60;
   const cutoffStr = `${ch}:${String(cm).padStart(2, "0")} ${ch >= 12 ? "PM" : "AM"}`;
 
   return (
@@ -450,7 +511,8 @@ export function ScannerClient({
           <div>
             <p className="text-sm font-bold text-slate-900 dark:text-white">{orgName}</p>
             <div className="flex items-center gap-2">
-              <span className={cn("flex items-center gap-1 text-[10px] font-mono", isOnline ? "text-green-600 dark:text-green-400" : "text-red-500")}>
+              <span className={cn("flex items-center gap-1 text-[10px] font-mono",
+                isOnline ? "text-green-600 dark:text-green-400" : "text-red-500")}>
                 {isOnline ? <Wifi size={10} /> : <WifiOff size={10} />}
                 {isOnline ? "Online" : "Offline"}
               </span>
@@ -465,13 +527,12 @@ export function ScannerClient({
             <span className="badge-amber text-[10px] font-mono">{queuedCount} queued</span>
           )}
           <div className="flex items-center gap-1.5 text-xs font-mono text-slate-600 dark:text-green-300">
-            <Users size={13} />
-            {scanCount}
+            <Users size={13} />{scanCount}
           </div>
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
             className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-green-950/30 transition-colors"
-            title={soundEnabled ? "Mute sounds" : "Enable sounds"}
+            title={soundEnabled ? "Mute" : "Unmute"}
           >
             {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
           </button>
@@ -495,13 +556,15 @@ export function ScannerClient({
         </div>
       )}
 
-      {/* Scanner area */}
+      {/* Scanner */}
       <div className="flex-1 max-w-sm mx-auto w-full px-4 py-6 space-y-4">
         <div className="card overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[#bbf7d0] dark:border-[#1a3a24] bg-green-50 dark:bg-green-950/20">
             <span className="relative flex h-2.5 w-2.5">
-              <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-75", processing ? "bg-amber-400" : "bg-green-400")} />
-              <span className={cn("relative inline-flex rounded-full h-2.5 w-2.5", processing ? "bg-amber-500" : "bg-green-500")} />
+              <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                processing ? "bg-amber-400" : "bg-green-400")} />
+              <span className={cn("relative inline-flex rounded-full h-2.5 w-2.5",
+                processing ? "bg-amber-500" : "bg-green-500")} />
             </span>
             <span className="text-xs font-medium text-green-700 dark:text-green-300">
               {processing ? "Processing…" : "Scanner ready — hold QR card up to camera"}
@@ -520,19 +583,28 @@ export function ScannerClient({
 
         {/* Scan result */}
         {scanResult && (() => {
-          const cfg = resultConfig[scanResult.type];
+          const cfg  = resultConfig[scanResult.type];
           const Icon = cfg.icon;
           return (
-            <div className={cn("card p-4 border flex items-start gap-4 animate-in fade-in-0 slide-in-from-bottom-2 duration-300", cfg.bg)}>
+            <div className={cn(
+              "card p-4 border flex items-start gap-4 animate-in fade-in-0 slide-in-from-bottom-2 duration-300",
+              cfg.bg
+            )}>
               <div className="w-12 h-12 rounded-full bg-white/60 dark:bg-black/20 flex items-center justify-center shrink-0">
                 <Icon size={24} className={cfg.iconColor} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className={cn("text-sm font-bold", cfg.labelColor)}>{cfg.label}</p>
                 <p className="text-base font-semibold text-slate-900 dark:text-white truncate">{scanResult.name}</p>
-                {scanResult.className && <p className="text-xs text-slate-500 dark:text-[#6b9e7a]">{scanResult.className}</p>}
-                {scanResult.message && <p className="text-xs text-slate-500 dark:text-[#6b9e7a] mt-0.5">{scanResult.message}</p>}
-                {scanResult.lateReason && <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">Reason: {scanResult.lateReason}</p>}
+                {scanResult.className && (
+                  <p className="text-xs text-slate-500 dark:text-[#6b9e7a]">{scanResult.className}</p>
+                )}
+                {scanResult.message && (
+                  <p className="text-xs text-slate-600 dark:text-[#6b9e7a] mt-0.5 leading-relaxed">{scanResult.message}</p>
+                )}
+                {scanResult.lateReason && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">Reason: {scanResult.lateReason}</p>
+                )}
                 <p className="text-xs text-slate-400 dark:text-[#4a7a5a] mt-0.5 font-mono">{scanResult.time}</p>
               </div>
             </div>
@@ -540,7 +612,7 @@ export function ScannerClient({
         })()}
 
         <div className="text-center text-xs text-slate-400 dark:text-[#4a7a5a] font-mono">
-          {scanCount} scan{scanCount !== 1 ? "s" : ""} this session · {cachedMembers.length} students cached
+          {scanCount} scan{scanCount !== 1 ? "s" : ""} this session · {cachedMembers.filter(m => m.is_active).length} active students cached
         </div>
       </div>
 
