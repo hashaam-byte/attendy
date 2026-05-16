@@ -1,9 +1,10 @@
-// src/app/[slug]/qr-cards/page.tsx — ATTENDY-EDU v3
+// src/app/[slug]/(dashboard)/qr-cards/page.tsx — ATTENDY-EDU v3
 import { createClient } from "@/lib/supabase/server";
-import { redirect, notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import QRCardClient from "./qr-cards-client";
+import { StudentSelector } from "./student-selector";
 
 export const dynamic = "force-dynamic";
 
@@ -81,27 +82,16 @@ export default async function QRCardPage({
         </div>
       </div>
 
-      {/* Student selector */}
+      {/* Student selector — must be a Client Component because of onChange */}
       {(students ?? []).length > 1 && (
         <div className="card p-4">
           <label className="block text-xs font-medium text-slate-600 dark:text-green-200 mb-2">
             Select student to preview card:
           </label>
-          <select
-            className="input-base max-w-xs"
-            value={selectedStudent.id}
-            onChange={(e) => {
-              const url = new URL(window.location.href);
-              url.searchParams.set("id", e.target.value);
-              window.location.href = url.toString();
-            }}
-          >
-            {(students ?? []).map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.full_name} {s.class_name ? `· ${s.class_name}` : ""}
-              </option>
-            ))}
-          </select>
+          <StudentSelector
+            students={students ?? []}
+            selectedId={selectedStudent.id}
+          />
         </div>
       )}
 
