@@ -1,13 +1,13 @@
 "use client";
 // src/app/[slug]/settings/setiings-client.tsx — ATTENDY-EDU v3
-// Fully configurable + staff suspend / delete / reactivate
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   School, Clock, Bell, Users, CreditCard, Save, Loader2,
   Camera, CheckCircle, AlertTriangle, Trash2, Key,
-  UserX, UserCheck, ShieldOff, MoreVertical, X,
+  UserX, UserCheck, ShieldOff, MoreVertical, X, KeyRound, ChevronRight,
 } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import { PLAN_LIMITS, type PlanType } from "@/lib/types";
@@ -73,9 +73,7 @@ function ConfirmDialog({
           </button>
         </div>
         <div className="flex gap-2 pt-1">
-          <button onClick={onCancel} className="btn-secondary flex-1 justify-center text-xs">
-            Cancel
-          </button>
+          <button onClick={onCancel} className="btn-secondary flex-1 justify-center text-xs">Cancel</button>
           <button onClick={onConfirm} className={cn("flex-1 justify-center text-xs", confirmClass)}>
             {confirmLabel}
           </button>
@@ -87,11 +85,7 @@ function ConfirmDialog({
 
 // ── Staff action menu ──────────────────────────────────────────
 function StaffActions({
-  member,
-  currentUserId,
-  onSuspend,
-  onReactivate,
-  onDelete,
+  member, currentUserId, onSuspend, onReactivate, onDelete,
 }: {
   member: StaffMember;
   currentUserId: string;
@@ -103,9 +97,7 @@ function StaffActions({
   const isSelf = member.user_id === currentUserId;
 
   if (isSelf) {
-    return (
-      <span className="text-[10px] text-slate-400 dark:text-[#4a7a5a] italic px-2">(you)</span>
-    );
+    return <span className="text-[10px] text-slate-400 dark:text-[#4a7a5a] italic px-2">(you)</span>;
   }
 
   return (
@@ -116,7 +108,6 @@ function StaffActions({
       >
         <MoreVertical size={14} />
       </button>
-
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
@@ -185,14 +176,9 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
   const [inviting, setInviting] = useState(false);
   const [inviteResult, setInviteResult] = useState<string | null>(null);
 
-  // Staff list (local state so we can update without full page refresh)
   const [staffList, setStaffList] = useState<StaffMember[]>(initialStaff);
 
-  // Confirm dialog state
-  type ConfirmState = {
-    type: "suspend" | "reactivate" | "delete";
-    member: StaffMember;
-  } | null;
+  type ConfirmState = { type: "suspend" | "reactivate" | "delete"; member: StaffMember } | null;
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -303,9 +289,7 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
         body: JSON.stringify({ org_user_id: member.id, is_active: false }),
       });
       if (res.ok) {
-        setStaffList((prev) =>
-          prev.map((s) => (s.id === member.id ? { ...s, is_active: false } : s))
-        );
+        setStaffList((prev) => prev.map((s) => s.id === member.id ? { ...s, is_active: false } : s));
       } else {
         const d = await res.json();
         alert(d.error ?? "Failed to suspend user.");
@@ -326,9 +310,7 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
         body: JSON.stringify({ org_user_id: member.id, is_active: true }),
       });
       if (res.ok) {
-        setStaffList((prev) =>
-          prev.map((s) => (s.id === member.id ? { ...s, is_active: true } : s))
-        );
+        setStaffList((prev) => prev.map((s) => s.id === member.id ? { ...s, is_active: true } : s));
       } else {
         const d = await res.json();
         alert(d.error ?? "Failed to reactivate user.");
@@ -585,6 +567,23 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
           <Users size={16} className="text-green-600 dark:text-green-400" />
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Staff Accounts</h3>
         </div>
+
+        {/* Change Password link */}
+        <Link
+          href={`/${slug}/settings/change-password`}
+          className="flex items-center justify-between p-3 rounded-xl border border-[#bbf7d0] dark:border-[#1a3a24] hover:bg-green-50 dark:hover:bg-green-950/20 transition-all group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
+              <KeyRound size={14} className="text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-900 dark:text-white">Change My Password</p>
+              <p className="text-xs text-slate-400 dark:text-[#4a7a5a]">Update your login password</p>
+            </div>
+          </div>
+          <ChevronRight size={14} className="text-slate-300 dark:text-[#2d5a3d] shrink-0 group-hover:translate-x-0.5 transition-transform" />
+        </Link>
 
         {/* Invite form */}
         <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-2">
