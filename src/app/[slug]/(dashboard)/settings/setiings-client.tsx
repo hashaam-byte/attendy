@@ -6,8 +6,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   School, Clock, Bell, Users, CreditCard, Save, Loader2,
-  Camera, CheckCircle, AlertTriangle, Trash2, Key,
-  UserX, UserCheck, ShieldOff, MoreVertical, X, KeyRound, ChevronRight,
+  Camera, CheckCircle, AlertTriangle, Trash2, X,
+  UserCheck, ShieldOff, KeyRound, ChevronRight,
+  UserPlus, Copy, Eye, EyeOff,
 } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import { PLAN_LIMITS, type PlanType } from "@/lib/types";
@@ -48,33 +49,42 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 // ── Confirm dialog ─────────────────────────────────────────────
 function ConfirmDialog({
-  title, message, confirmLabel, confirmClass, onConfirm, onCancel,
+  title, message, confirmLabel, danger, onConfirm, onCancel,
 }: {
   title: string;
   message: string;
   confirmLabel: string;
-  confirmClass: string;
+  danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div className="card w-full max-w-sm p-6 space-y-4 shadow-xl">
-        <div className="flex items-start justify-between gap-3">
-          <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
-            <AlertTriangle size={18} className="text-red-500" />
+        <div className="flex items-start gap-3">
+          <div className={cn(
+            "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
+            danger ? "bg-red-100 dark:bg-red-900/30" : "bg-amber-100 dark:bg-amber-900/30"
+          )}>
+            <AlertTriangle size={18} className={danger ? "text-red-500" : "text-amber-500"} />
           </div>
           <div className="flex-1">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">{title}</h3>
             <p className="text-xs text-slate-500 dark:text-[#6b9e7a] mt-1 leading-relaxed">{message}</p>
           </div>
-          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 shrink-0">
+          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 shrink-0 mt-0.5">
             <X size={14} />
           </button>
         </div>
         <div className="flex gap-2 pt-1">
           <button onClick={onCancel} className="btn-secondary flex-1 justify-center text-xs">Cancel</button>
-          <button onClick={onConfirm} className={cn("flex-1 justify-center text-xs", confirmClass)}>
+          <button
+            onClick={onConfirm}
+            className={cn(
+              "flex-1 justify-center inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-xs font-medium transition-all",
+              danger ? "bg-red-600 hover:bg-red-700" : "bg-amber-600 hover:bg-amber-700"
+            )}
+          >
             {confirmLabel}
           </button>
         </div>
@@ -83,60 +93,256 @@ function ConfirmDialog({
   );
 }
 
-// ── Staff action menu ──────────────────────────────────────────
-function StaffActions({
-  member, currentUserId, onSuspend, onReactivate, onDelete,
+// ── Add Staff Modal ────────────────────────────────────────────
+function AddStaffModal({
+  orgId, orgSlug, onClose, onAdded,
 }: {
-  member: StaffMember;
-  currentUserId: string;
-  onSuspend: (m: StaffMember) => void;
-  onReactivate: (m: StaffMember) => void;
-  onDelete: (m: StaffMember) => void;
+  orgId: string;
+  orgSlug: string;
+  onClose: () => void;
+  onAdded: (member: StaffMember) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const isSelf = member.user_id === currentUserId;
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [role, setRole] = useState("teacher");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    email: string;
+    password: string;
+    smsSent: boolean;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
-  if (isSelf) {
-    return <span className="text-[10px] text-slate-400 dark:text-[#4a7a5a] italic px-2">(you)</span>;
+  // Default password: slug + "123"
+  const defaultPassword = `${orgSlug}123`;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setLoading(true);
+    setError(null);
+
+    const res = await fetch("/api/create-school-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        password: defaultPassword,
+        role,
+        organisation_id: orgId,
+        org_name: orgSlug,
+        phone: phone.trim() || undefined,
+      }),
+    });
+
+    const data = await res.json();
+    setLoading(false);
+
+    if (!res.ok) {
+      setError(data.error ?? "Failed to create user.");
+      return;
+    }
+
+    setResult({
+      email: email.trim().toLowerCase(),
+      password: defaultPassword,
+      smsSent: data.sms_sent ?? false,
+    });
+
+    onAdded({
+      id: `temp-${Date.now()}`,
+      user_id: data.user.id,
+      email: email.trim().toLowerCase(),
+      role,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    });
+  }
+
+  function copyCredentials() {
+    if (!result) return;
+    navigator.clipboard.writeText(
+      `Your Attendy Login Details\n\nSchool ID: ${orgSlug}\nEmail: ${result.email}\nPassword: ${result.password}\nLogin: https://attendy-edu.vercel.app/${orgSlug}/login\n\nPlease change your password after logging in.`
+    );
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-green-300 hover:bg-slate-100 dark:hover:bg-green-950/30 transition-colors"
-      >
-        <MoreVertical size={14} />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-8 z-40 w-44 card shadow-xl py-1 animate-in fade-in-0 zoom-in-95 duration-100">
-            {member.is_active ? (
-              <button
-                onClick={() => { setOpen(false); onSuspend(member); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors"
-              >
-                <ShieldOff size={12} /> Suspend access
-              </button>
-            ) : (
-              <button
-                onClick={() => { setOpen(false); onReactivate(member); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/20 transition-colors"
-              >
-                <UserCheck size={12} /> Reactivate
-              </button>
-            )}
-            <div className="my-1 border-t border-[#bbf7d0] dark:border-[#1a3a24]" />
-            <button
-              onClick={() => { setOpen(false); onDelete(member); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
-            >
-              <Trash2 size={12} /> Delete permanently
-            </button>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="card w-full max-w-md shadow-2xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#bbf7d0] dark:border-[#1a3a24] shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+              <UserPlus size={14} className="text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">Add Staff Member</p>
+              <p className="text-xs text-slate-400 dark:text-[#4a7a5a]">Creates a login for the school portal</p>
+            </div>
           </div>
-        </>
-      )}
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-green-950/30 text-slate-400">
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="px-5 py-5 space-y-4 overflow-y-auto flex-1">
+          {result ? (
+            /* ── Success state ── */
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                <CheckCircle size={18} />
+                <span className="text-sm font-semibold">Account created successfully!</span>
+              </div>
+
+              {result.smsSent && (
+                <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40 text-xs text-green-700 dark:text-green-300">
+                  ✓ Login credentials sent to their phone via SMS.
+                </div>
+              )}
+
+              <p className="text-xs text-slate-500 dark:text-[#6b9e7a]">
+                Share these credentials with the staff member. Ask them to log in and change their password immediately.
+              </p>
+
+              {/* Credentials box */}
+              <div className="bg-slate-50 dark:bg-white/[0.03] border border-[#e2e8f0] dark:border-[#1a3a24] rounded-xl p-4 space-y-3 font-mono text-xs">
+                {[
+                  { label: "School ID", value: orgSlug },
+                  { label: "Email", value: result.email },
+                  {
+                    label: "Password",
+                    value: showPassword ? result.password : "••••••••",
+                    action: (
+                      <button
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 ml-1"
+                      >
+                        {showPassword ? <EyeOff size={11} /> : <Eye size={11} />}
+                      </button>
+                    ),
+                  },
+                  { label: "Login URL", value: `attendy-edu.vercel.app/${orgSlug}/login` },
+                ].map(({ label, value, action }) => (
+                  <div key={label} className="flex items-center justify-between gap-2">
+                    <span className="text-slate-400 shrink-0">{label}</span>
+                    <div className="flex items-center gap-1 text-right">
+                      <span className="text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{value}</span>
+                      {action}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 text-xs text-amber-700 dark:text-amber-300">
+                💡 Remind them: Settings → <strong>Change My Password</strong> after first login.
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={copyCredentials} className="btn-secondary flex-1 justify-center text-xs">
+                  {copied ? <><CheckCircle size={12} /> Copied!</> : <><Copy size={12} /> Copy All</>}
+                </button>
+                <button onClick={onClose} className="btn-primary flex-1 justify-center text-xs">Done</button>
+              </div>
+            </div>
+          ) : (
+            /* ── Create form ── */
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Default password info */}
+              <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40 text-xs text-green-700 dark:text-green-300 space-y-1">
+                <p className="font-semibold">Default password: <span className="font-mono bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 rounded">{defaultPassword}</span></p>
+                <p className="opacity-80">This is automatically set. The staff member should change it after first login via Settings → Change Password.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-green-200 mb-1.5">
+                  Email address <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  className="input-base"
+                  placeholder="teacher@school.edu.ng"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-green-200 mb-1.5">
+                  Phone number <span className="text-slate-400 font-normal">(optional — for SMS)</span>
+                </label>
+                <input
+                  type="tel"
+                  className="input-base"
+                  placeholder="08012345678"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+                <p className="text-[10px] text-slate-400 dark:text-[#4a7a5a] mt-1">
+                  If provided, their login credentials will be sent to this number via SMS.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-green-200 mb-2">
+                  Role <span className="text-red-500">*</span>
+                </label>
+                <div className="space-y-2">
+                  {[
+                    { value: "admin", label: "Admin", desc: "Full dashboard — students, reports, settings, staff" },
+                    { value: "teacher", label: "Teacher", desc: "Class attendance + view reports for their class" },
+                    { value: "gateman", label: "Gateman", desc: "Scanner only — goes straight to scanner on login" },
+                  ].map(({ value, label, desc }) => (
+                    <label
+                      key={value}
+                      className={cn(
+                        "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all",
+                        role === value
+                          ? "border-green-500 bg-green-50 dark:bg-green-950/30 dark:border-green-700"
+                          : "border-[#bbf7d0] dark:border-[#1a3a24] hover:bg-green-50/50 dark:hover:bg-green-950/10"
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="staff-role"
+                        value={value}
+                        checked={role === value}
+                        onChange={() => setRole(value)}
+                        className="mt-0.5 accent-green-600"
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-slate-900 dark:text-white">{label}</p>
+                        <p className="text-xs text-slate-400 dark:text-[#4a7a5a]">{desc}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {error && (
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 text-sm text-red-700 dark:text-red-400">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={onClose} className="btn-secondary flex-1 justify-center">Cancel</button>
+                <button type="submit" disabled={loading || !email} className="btn-primary flex-1 justify-center">
+                  {loading
+                    ? <><Loader2 size={13} className="animate-spin" /> Creating…</>
+                    : <><UserPlus size={13} /> Create Login</>
+                  }
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -171,18 +377,15 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
   const [logoSaved, setLogoSaved] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("teacher");
-  const [inviting, setInviting] = useState(false);
-  const [inviteResult, setInviteResult] = useState<string | null>(null);
-
   const [staffList, setStaffList] = useState<StaffMember[]>(initialStaff);
+  const [showAddStaff, setShowAddStaff] = useState(false);
+  const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   type ConfirmState = { type: "suspend" | "reactivate" | "delete"; member: StaffMember } | null;
   const [confirm, setConfirm] = useState<ConfirmState>(null);
-  const [actionLoading, setActionLoading] = useState(false);
 
-  // ── Settings save ─────────────────────────────────────────────
+  // ── Settings save ──────────────────────────────────────────
   async function saveSettings() {
     setSavingSettings(true);
     setSettingsSaved(false);
@@ -202,7 +405,7 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
     }
   }
 
-  // ── Logo upload ───────────────────────────────────────────────
+  // ── Logo upload ────────────────────────────────────────────
   function handleLogoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -251,93 +454,45 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
     router.refresh();
   }
 
-  // ── Staff invite ──────────────────────────────────────────────
-  async function handleInvite(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = inviteEmail.trim().toLowerCase();
-    if (!trimmed.includes("@")) { setInviteResult("✗ Enter a valid email"); return; }
-    setInviting(true);
-    setInviteResult(null);
-    try {
-      const res = await fetch("/api/invite-staff", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed, role: inviteRole, org_id: org.id }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setInviteResult(`✓ Invite sent to ${trimmed}.`);
-        setInviteEmail("");
-        router.refresh();
-      } else {
-        setInviteResult(`✗ ${data.error ?? "Failed to send invite."}`);
-      }
-    } catch {
-      setInviteResult("✗ Network error. Try again.");
-    } finally {
-      setInviting(false);
-    }
-  }
-
-  // ── Staff suspend ─────────────────────────────────────────────
+  // ── Staff actions ──────────────────────────────────────────
   async function executeSuspend(member: StaffMember) {
-    setActionLoading(true);
+    setActionLoading(member.id);
     try {
       const res = await fetch("/api/manage-staff", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ org_user_id: member.id, is_active: false }),
       });
-      if (res.ok) {
-        setStaffList((prev) => prev.map((s) => s.id === member.id ? { ...s, is_active: false } : s));
-      } else {
-        const d = await res.json();
-        alert(d.error ?? "Failed to suspend user.");
-      }
+      if (res.ok) setStaffList((prev) => prev.map((s) => s.id === member.id ? { ...s, is_active: false } : s));
     } finally {
-      setActionLoading(false);
-      setConfirm(null);
+      setActionLoading(null); setConfirm(null); setExpandedStaffId(null);
     }
   }
 
-  // ── Staff reactivate ──────────────────────────────────────────
   async function executeReactivate(member: StaffMember) {
-    setActionLoading(true);
+    setActionLoading(member.id);
     try {
       const res = await fetch("/api/manage-staff", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ org_user_id: member.id, is_active: true }),
       });
-      if (res.ok) {
-        setStaffList((prev) => prev.map((s) => s.id === member.id ? { ...s, is_active: true } : s));
-      } else {
-        const d = await res.json();
-        alert(d.error ?? "Failed to reactivate user.");
-      }
+      if (res.ok) setStaffList((prev) => prev.map((s) => s.id === member.id ? { ...s, is_active: true } : s));
     } finally {
-      setActionLoading(false);
-      setConfirm(null);
+      setActionLoading(null); setConfirm(null); setExpandedStaffId(null);
     }
   }
 
-  // ── Staff delete ──────────────────────────────────────────────
   async function executeDelete(member: StaffMember) {
-    setActionLoading(true);
+    setActionLoading(member.id);
     try {
       const res = await fetch(
         `/api/manage-staff?org_user_id=${encodeURIComponent(member.id)}`,
         { method: "DELETE" }
       );
-      if (res.ok) {
-        setStaffList((prev) => prev.filter((s) => s.id !== member.id));
-      } else {
-        const d = await res.json();
-        alert(d.error ?? "Failed to delete user.");
-      }
+      if (res.ok) setStaffList((prev) => prev.filter((s) => s.id !== member.id));
     } finally {
-      setActionLoading(false);
-      setConfirm(null);
+      setActionLoading(null); setConfirm(null); setExpandedStaffId(null);
     }
   }
 
@@ -363,7 +518,7 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
         <p className="page-sub">School configuration and account management</p>
       </div>
 
-      {/* ── School Logo ──────────────────────────────────────── */}
+      {/* ── School Logo ──────────────────────────────────── */}
       <div className="card p-5 space-y-4">
         <div className="flex items-center gap-2">
           <Camera size={16} className="text-green-600 dark:text-green-400" />
@@ -399,7 +554,7 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
         <p className="text-xs text-slate-400 dark:text-[#4a7a5a]">PNG, JPG, or SVG. Recommended: 200×200px square.</p>
       </div>
 
-      {/* ── Attendance Rules ─────────────────────────────────── */}
+      {/* ── Attendance Rules ──────────────────────────────── */}
       <div className="card p-5 space-y-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -422,12 +577,12 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-700 dark:text-green-200 mb-1.5">
-              Grace Period: <span className="text-green-600 dark:text-green-400">{settings.grace_period_minutes} minutes</span>
+              Grace Period: <span className="text-green-600 dark:text-green-400">{settings.grace_period_minutes} min</span>
             </label>
             <input type="range" min={0} max={60} step={5} value={settings.grace_period_minutes}
               onChange={(e) => setSettings((s) => ({ ...s, grace_period_minutes: Number(e.target.value) }))}
               className="w-full accent-green-600" />
-            <div className="flex justify-between text-[10px] text-slate-400 dark:text-[#4a7a5a]">
+            <div className="flex justify-between text-[10px] text-slate-400 dark:text-[#4a7a5a] mt-1">
               <span>0 min</span>
               <span>Late after {(() => {
                 const [h, m] = settings.start_time.split(":").map(Number);
@@ -442,13 +597,13 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
 
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-green-200 mb-2">School Days</label>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
             {DAYS.map((day, i) => (
               <button key={day} onClick={() => toggleDay(i)}
                 className={cn("flex-1 py-2 rounded-lg text-xs font-medium border transition-all",
                   settings.school_days.includes(i)
                     ? "bg-green-600 border-green-600 text-white"
-                    : "border-[#bbf7d0] dark:border-[#1a3a24] text-slate-500 dark:text-green-300 hover:bg-green-50"
+                    : "border-[#bbf7d0] dark:border-[#1a3a24] text-slate-500 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-950/20"
                 )}>
                 {day}
               </button>
@@ -473,7 +628,7 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
             onChange={(e) => setSettings((s) => ({ ...s, welfare_alert_days: Number(e.target.value) }))}
             className="w-full accent-green-600" />
           <p className="text-xs text-slate-400 dark:text-[#4a7a5a] mt-1">
-            Flag a student for welfare check if absent {settings.welfare_alert_days}+ days in a row.
+            Flag a student for a welfare check if absent {settings.welfare_alert_days}+ days in a row.
           </p>
         </div>
 
@@ -492,7 +647,7 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
         <p className="text-xs text-slate-400 dark:text-[#4a7a5a]">Term dates are used to calculate per-student attendance percentages in reports.</p>
       </div>
 
-      {/* ── Notifications ────────────────────────────────────── */}
+      {/* ── Notifications ────────────────────────────────── */}
       <div className="card p-5 space-y-4">
         <div className="flex items-center gap-2">
           <Bell size={16} className="text-green-600 dark:text-green-400" />
@@ -524,7 +679,7 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
         </button>
       </div>
 
-      {/* ── Subscription ─────────────────────────────────────── */}
+      {/* ── Subscription ─────────────────────────────────── */}
       <div className={cn("card p-5 space-y-3", isExpiringSoon && "border-amber-300 dark:border-amber-700/50")}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -561,14 +716,19 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
         </a>
       </div>
 
-      {/* ── Staff Management ─────────────────────────────────── */}
+      {/* ── Staff Management ─────────────────────────────── */}
       <div className="card p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <Users size={16} className="text-green-600 dark:text-green-400" />
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Staff Accounts</h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users size={16} className="text-green-600 dark:text-green-400" />
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Staff Accounts</h3>
+          </div>
+          <button onClick={() => setShowAddStaff(true)} className="btn-primary text-xs py-1.5 gap-1.5">
+            <UserPlus size={13} /> Add Staff
+          </button>
         </div>
 
-        {/* Change Password link */}
+        {/* Change My Password */}
         <Link
           href={`/${slug}/settings/change-password`}
           className="flex items-center justify-between p-3 rounded-xl border border-[#bbf7d0] dark:border-[#1a3a24] hover:bg-green-50 dark:hover:bg-green-950/20 transition-all group"
@@ -585,86 +745,134 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
           <ChevronRight size={14} className="text-slate-300 dark:text-[#2d5a3d] shrink-0 group-hover:translate-x-0.5 transition-transform" />
         </Link>
 
-        {/* Invite form */}
-        <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-2">
-          <input className="input-base flex-1" type="email" placeholder="teacher@school.edu.ng"
-            value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required />
-          <select className="input-base w-auto" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
-            <option value="teacher">Teacher</option>
-            <option value="gateman">Gateman</option>
-            <option value="admin">Admin</option>
-          </select>
-          <button type="submit" disabled={inviting || !inviteEmail} className="btn-primary whitespace-nowrap">
-            {inviting ? <Loader2 size={14} className="animate-spin" /> : null}
-            Invite
-          </button>
-        </form>
+        {/* Staff list — expandable rows, no dropdown */}
+        <div className="space-y-2">
+          {staffList.length === 0 && (
+            <div className="py-8 text-center">
+              <Users size={28} className="mx-auto text-green-200 dark:text-green-800 mb-2" />
+              <p className="text-sm text-slate-400 dark:text-[#4a7a5a]">No staff accounts yet.</p>
+              <button onClick={() => setShowAddStaff(true)} className="btn-primary text-xs mt-3">
+                <UserPlus size={13} /> Add First Staff Member
+              </button>
+            </div>
+          )}
 
-        {inviteResult && (
-          <div className={cn("p-3 rounded-lg text-xs leading-relaxed",
-            inviteResult.startsWith("✓")
-              ? "bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40 text-green-700 dark:text-green-300"
-              : "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-400"
-          )}>
-            {inviteResult}
-          </div>
-        )}
+          {staffList.map((s) => {
+            const isSelf = s.user_id === currentUserId;
+            const isExpanded = expandedStaffId === s.id;
+            const isActioning = actionLoading === s.id;
 
-        {/* Staff table */}
-        <div className="overflow-x-auto rounded-lg border border-[#bbf7d0] dark:border-[#1a3a24]">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[#bbf7d0] dark:border-[#1a3a24] bg-green-50 dark:bg-green-950/20">
-                <th className="table-th">Email / ID</th>
-                <th className="table-th">Role</th>
-                <th className="table-th">Status</th>
-                <th className="table-th hidden sm:table-cell">Joined</th>
-                <th className="table-th w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {staffList.map((s) => (
-                <tr key={s.id} className={cn("table-row", !s.is_active && "opacity-50")}>
-                  <td className="table-td font-mono text-xs truncate max-w-[160px]">
-                    {s.email ?? s.user_id.slice(0, 8) + "…"}
-                  </td>
-                  <td className="table-td">
-                    <span className="badge-gray capitalize">{s.role}</span>
-                  </td>
-                  <td className="table-td">
-                    <span className={cn("badge", s.is_active ? "badge-green" : "badge-red")}>
+            return (
+              <div
+                key={s.id}
+                className={cn(
+                  "rounded-xl border overflow-hidden transition-all",
+                  isExpanded
+                    ? "border-green-400 dark:border-green-700"
+                    : "border-[#bbf7d0] dark:border-[#1a3a24]",
+                  !s.is_active && "opacity-60"
+                )}
+              >
+                {/* Main row */}
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-green-50/50 dark:hover:bg-green-950/10 transition-colors"
+                  onClick={() => !isSelf && setExpandedStaffId(isExpanded ? null : s.id)}
+                >
+                  {/* Avatar */}
+                  <div className={cn(
+                    "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
+                    s.role === "admin"
+                      ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400"
+                      : s.role === "teacher"
+                      ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                      : "bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-400"
+                  )}>
+                    {(s.email ?? s.user_id)[0].toUpperCase()}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                      {s.email ?? `${s.user_id.slice(0, 12)}…`}
+                      {isSelf && (
+                        <span className="ml-1.5 text-[10px] text-green-600 dark:text-green-400 font-normal">(you)</span>
+                      )}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="badge-gray capitalize text-[10px]">{s.role}</span>
+                      <span className="text-[10px] text-slate-300 dark:text-[#2d5a3d]">·</span>
+                      <span className="text-[10px] text-slate-400 dark:text-[#4a7a5a]">
+                        {formatDate(s.created_at)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Status + caret */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={cn("badge text-[10px]", s.is_active ? "badge-green" : "badge-red")}>
                       {s.is_active ? "Active" : "Suspended"}
                     </span>
-                  </td>
-                  <td className="table-td hidden sm:table-cell text-xs text-slate-400 dark:text-[#4a7a5a]">
-                    {formatDate(s.created_at)}
-                  </td>
-                  <td className="table-td">
-                    <StaffActions
-                      member={s}
-                      currentUserId={currentUserId}
-                      onSuspend={(m) => setConfirm({ type: "suspend", member: m })}
-                      onReactivate={(m) => setConfirm({ type: "reactivate", member: m })}
-                      onDelete={(m) => setConfirm({ type: "delete", member: m })}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    {!isSelf && (
+                      <ChevronRight
+                        size={14}
+                        className={cn(
+                          "text-slate-300 dark:text-[#2d5a3d] transition-transform duration-200",
+                          isExpanded && "rotate-90"
+                        )}
+                      />
+                    )}
+                  </div>
+                </button>
+
+                {/* Expanded actions — inline, no dropdown */}
+                {isExpanded && !isSelf && (
+                  <div className="px-4 py-3 border-t border-[#bbf7d0] dark:border-[#1a3a24] bg-green-50/30 dark:bg-green-950/10 flex flex-wrap gap-2">
+                    {s.is_active ? (
+                      <button
+                        onClick={() => setConfirm({ type: "suspend", member: s })}
+                        disabled={isActioning}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-white dark:bg-[#0f2018] border border-amber-300 dark:border-amber-800/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors disabled:opacity-50"
+                      >
+                        {isActioning ? <Loader2 size={11} className="animate-spin" /> : <ShieldOff size={11} />}
+                        Suspend access
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setConfirm({ type: "reactivate", member: s })}
+                        disabled={isActioning}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-white dark:bg-[#0f2018] border border-green-300 dark:border-green-800/50 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/20 transition-colors disabled:opacity-50"
+                      >
+                        {isActioning ? <Loader2 size={11} className="animate-spin" /> : <UserCheck size={11} />}
+                        Reactivate
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setConfirm({ type: "delete", member: s })}
+                      disabled={isActioning}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-white dark:bg-[#0f2018] border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors disabled:opacity-50"
+                    >
+                      {isActioning ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                      Delete permanently
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+
         <p className="text-xs text-slate-400 dark:text-[#4a7a5a]">
-          Suspended staff cannot log in. Deleted staff are permanently removed from the system.
+          Tap a staff row to expand actions. Suspended staff cannot log in but can be reactivated.
         </p>
       </div>
 
-      {/* ── School Info ───────────────────────────────────────── */}
+      {/* ── School Info ──────────────────────────────────── */}
       <div className="card p-5 space-y-3">
         <div className="flex items-center gap-2">
           <School size={16} className="text-green-600 dark:text-green-400" />
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white">School Details</h3>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
             { label: "School Name", value: org?.name },
             { label: "School ID (slug)", value: org?.slug },
@@ -682,33 +890,35 @@ export function SettingsClient({ org, staff: initialStaff, currentUserId, slug }
         </p>
       </div>
 
-      {/* ── Confirm dialog ────────────────────────────────────── */}
+      {/* Modals */}
+      {showAddStaff && (
+        <AddStaffModal
+          orgId={org.id}
+          orgSlug={slug}
+          onClose={() => setShowAddStaff(false)}
+          onAdded={(member) => setStaffList((prev) => [member, ...prev])}
+        />
+      )}
+
       {confirm && (
         <ConfirmDialog
           title={
             confirm.type === "delete" ? "Delete staff member permanently?" :
-            confirm.type === "suspend" ? "Suspend staff access?" :
-            "Reactivate staff member?"
+            confirm.type === "suspend" ? "Suspend staff access?" : "Reactivate staff member?"
           }
           message={
             confirm.type === "delete"
-              ? `This will permanently delete ${confirm.member.email ?? "this user"} from Attendy and revoke all access. This cannot be undone.`
+              ? `This will permanently remove ${confirm.member.email ?? "this user"} from Attendy. This cannot be undone.`
               : confirm.type === "suspend"
-              ? `${confirm.member.email ?? "This user"} will no longer be able to log in. You can reactivate them at any time.`
+              ? `${confirm.member.email ?? "This user"} will no longer be able to log in. You can reactivate them any time.`
               : `${confirm.member.email ?? "This user"} will regain access to the school portal.`
           }
           confirmLabel={
-            actionLoading ? "Please wait…" :
             confirm.type === "delete" ? "Delete permanently" :
             confirm.type === "suspend" ? "Suspend" : "Reactivate"
           }
-          confirmClass={cn(
-            "btn-primary flex-1 justify-center text-xs",
-            confirm.type === "delete" ? "bg-red-600 hover:bg-red-700" :
-            confirm.type === "suspend" ? "bg-amber-600 hover:bg-amber-700" : ""
-          )}
+          danger={confirm.type === "delete"}
           onConfirm={() => {
-            if (actionLoading) return;
             if (confirm.type === "suspend") executeSuspend(confirm.member);
             else if (confirm.type === "reactivate") executeReactivate(confirm.member);
             else executeDelete(confirm.member);
