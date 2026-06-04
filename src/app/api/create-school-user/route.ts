@@ -1,12 +1,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { adminSupabase } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(req: NextRequest) {
   // Only platform admins can create users
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const adminSupabase = await createClient();
+  const { data: { user } } = await adminSupabase.auth.getUser();
   if (!user || user.app_metadata?.platform_admin !== true) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
