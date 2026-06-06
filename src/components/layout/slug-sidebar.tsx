@@ -1,37 +1,58 @@
 "use client";
-// src/components/layout/slug-sidebar.tsx — ATTENDY-EDU
-// UPDATED: Added "Import Students" and "Bulk Print" links to sidebar nav.
-// Also removed the dead non-slug sidebar reference.
-
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, BookOpen, ScanLine, BarChart3,
   Bell, Settings, X, Menu, GraduationCap, UserX, QrCode,
-  Upload, Printer,
+  Upload, Printer, CheckSquare, Megaphone, FileCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
-function buildNavItems(slug: string, role: string) {
-  const items = [
-    { label: "Dashboard",      href: `/${slug}/dashboard`,        icon: LayoutDashboard },
-    { label: "Students",       href: `/${slug}/students`,         icon: Users },
-    { label: "Import Students",href: `/${slug}/students/import`,  icon: Upload },
-    { label: "Classes",        href: `/${slug}/classes`,          icon: BookOpen },
-    { label: "Scanner",        href: `/${slug}/scanner`,          icon: ScanLine },
-    { label: "Absent Today",   href: `/${slug}/absent`,           icon: UserX },
-    { label: "QR Cards",       href: `/${slug}/qr-cards`,         icon: QrCode },
-    { label: "Bulk Print",     href: `/${slug}/qr-cards/bulk`,    icon: Printer },
-    { label: "Reports",        href: `/${slug}/reports`,          icon: BarChart3 },
-    { label: "Notifications",  href: `/${slug}/notifications`,    icon: Bell },
+type NavItem = {
+  label: string;
+  href:  string;
+  icon:  React.ElementType;
+};
+
+function buildNavItems(slug: string, role: string): NavItem[] {
+  // Items visible to ALL roles
+  const shared: NavItem[] = [
+    { label: "Dashboard", href: `/${slug}/dashboard`, icon: LayoutDashboard },
+    { label: "Scanner",   href: `/${slug}/scanner`,   icon: ScanLine },
+    { label: "Notices",   href: `/${slug}/notices`,   icon: Megaphone },
+    { label: "Settings",  href: `/${slug}/settings`,  icon: Settings },
   ];
 
-  if (role === "admin") {
-    items.push({ label: "Settings", href: `/${slug}/settings`, icon: Settings });
+  if (role === "gateman") return shared;
+
+  if (role === "teacher") {
+    return [
+      { label: "Dashboard",        href: `/${slug}/dashboard`,        icon: LayoutDashboard },
+      { label: "My Class",         href: `/${slug}/my-class`,         icon: BookOpen },
+      { label: "Class Attendance", href: `/${slug}/my-class/confirm`, icon: CheckSquare },
+      { label: "Scanner",          href: `/${slug}/scanner`,          icon: ScanLine },
+      { label: "Notices",          href: `/${slug}/notices`,          icon: Megaphone },
+      { label: "Settings",         href: `/${slug}/settings`,         icon: Settings },
+    ];
   }
 
-  return items;
+  // admin — full nav
+  return [
+    { label: "Dashboard",       href: `/${slug}/dashboard`,       icon: LayoutDashboard },
+    { label: "Students",        href: `/${slug}/students`,        icon: Users },
+    { label: "Import Students", href: `/${slug}/students/import`, icon: Upload },
+    { label: "Classes",         href: `/${slug}/classes`,         icon: BookOpen },
+    { label: "Scanner",         href: `/${slug}/scanner`,         icon: ScanLine },
+    { label: "Absent Today",    href: `/${slug}/absent`,          icon: UserX },
+    { label: "QR Cards",        href: `/${slug}/qr-cards`,        icon: QrCode },
+    { label: "Bulk Print",      href: `/${slug}/qr-cards/bulk`,   icon: Printer },
+    { label: "Reports",         href: `/${slug}/reports`,         icon: BarChart3 },
+    { label: "Excuse Requests", href: `/${slug}/excuses`,         icon: FileCheck },
+    { label: "Notices",         href: `/${slug}/notices`,         icon: Megaphone },
+    { label: "Notifications",   href: `/${slug}/notifications`,   icon: Bell },
+    { label: "Settings",        href: `/${slug}/settings`,        icon: Settings },
+  ];
 }
 
 interface Props {
@@ -41,15 +62,12 @@ interface Props {
   primaryColor: string;
 }
 
-function NavContent({
-  slug, role, orgName, primaryColor, onClose,
-}: Props & { onClose?: () => void }) {
+function NavContent({ slug, role, orgName, primaryColor, onClose }: Props & { onClose?: () => void }) {
   const pathname = usePathname();
   const items    = buildNavItems(slug, role);
 
   return (
     <div className="flex flex-col h-full">
-      {/* Org header */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-[#bbf7d0] dark:border-[#1a3a24]">
         <div
           className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm shrink-0"
@@ -62,18 +80,17 @@ function NavContent({
             {orgName}
           </p>
           <p className="text-[10px] uppercase tracking-wider" style={{ color: primaryColor }}>
-            Education
+            {role}
           </p>
         </div>
       </div>
 
-      {/* Nav links */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {items.map(({ label, href, icon: Icon }) => {
-          // Active: exact match for dashboard, startsWith for others
-          const isActive = href === `/${slug}/dashboard`
-            ? pathname === href
-            : pathname === href || pathname.startsWith(href + "/");
+          const isActive =
+            href === `/${slug}/dashboard`
+              ? pathname === href
+              : pathname === href || pathname.startsWith(href + "/");
 
           return (
             <Link
@@ -95,7 +112,6 @@ function NavContent({
         })}
       </nav>
 
-      {/* Role badge + version */}
       <div className="px-4 py-3 border-t border-[#bbf7d0] dark:border-[#1a3a24]">
         <div className="flex items-center gap-2">
           <span
@@ -116,12 +132,10 @@ export function SlugSidebar({ slug, role, orgName, primaryColor }: Props) {
 
   return (
     <>
-      {/* Desktop sidebar */}
       <aside className="hidden lg:flex w-56 shrink-0 flex-col bg-white dark:bg-[#0c1a12] border-r border-[#bbf7d0] dark:border-[#1a3a24] h-full">
         <NavContent slug={slug} role={role} orgName={orgName} primaryColor={primaryColor} />
       </aside>
 
-      {/* Mobile hamburger */}
       <button
         onClick={() => setMobileOpen(true)}
         className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-white dark:bg-[#0f2018] border border-[#bbf7d0] dark:border-[#1a3a24] shadow-sm"
@@ -129,7 +143,6 @@ export function SlugSidebar({ slug, role, orgName, primaryColor }: Props) {
         <Menu size={18} className="text-slate-600 dark:text-green-300" />
       </button>
 
-      {/* Mobile overlay */}
       {mobileOpen && (
         <div
           className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
@@ -137,7 +150,6 @@ export function SlugSidebar({ slug, role, orgName, primaryColor }: Props) {
         />
       )}
 
-      {/* Mobile drawer */}
       <aside
         className={cn(
           "lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-[#0c1a12] border-r border-[#bbf7d0] dark:border-[#1a3a24] transform transition-transform duration-200",
