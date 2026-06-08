@@ -1,10 +1,14 @@
-// src/app/[slug]/(dashboard)/students/[id]/page.tsx — ATTENDY-EDU v3
+// src/app/[slug]/(dashboard)/students/[id]/page.tsx — ATTENDY-EDU v4
+// CHANGES: Clean attendance summary (present/late/absent/%) with expandable
+// full history section. No bulky heatmap on admin side.
+
 import { createClient } from "@/lib/supabase/server";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, QrCode, Phone, MessageSquare } from "lucide-react";
 import { cn, formatDateTime, formatDate, getInitials } from "@/lib/utils";
 import { StudentActions } from "./student-actions";
+import { AttendanceSummary } from "./attendance-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +18,7 @@ export default async function StudentProfilePage({
   params: Promise<{ slug: string; id: string }>;
 }) {
   const { slug, id } = await params;
-  const supabase = await createClient();
+  const supabase      = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect(`/${slug}/login`);
 
@@ -36,57 +40,56 @@ export default async function StudentProfilePage({
 
   if (!student) notFound();
 
-  // Fetch org name for ID generation reference
   const { data: org } = await supabase
     .from("organisations")
-    .select("name")
+    .select("name, settings")
     .eq("id", orgUser.organisation_id)
     .single();
 
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    .toISOString().split("T")[0];
+  const settings = (org?.settings as any) || {};
+  const termStart = settings.term_start_date
+    ? new Date(settings.term_start_date)
+    : new Date(new Date().setMonth(new Date().getMonth() - 3));
+  const termEnd = settings.term_end_date
+    ? new Date(settings.term_end_date)
+    : new Date();
 
-  const [{ data: recentLogs }, { count: presentCount }, { count: lateCount }] =
-    await Promise.all([
-      supabase
-        .from("attendance_logs")
-        .select("id, scanned_at, status, scan_type, late_reason")
-        .eq("member_id", id)
-        .order("scanned_at", { ascending: false })
-        .limit(30),
-      supabase
-        .from("attendance_logs")
-        .select("*", { count: "exact", head: true })
-        .eq("member_id", id)
-        .eq("scan_type", "entry")
-        .eq("status", "present")
-        .gte("scanned_at", `${thirtyDaysAgo}T00:00:00`),
-      supabase
-        .from("attendance_logs")
-        .select("*", { count: "exact", head: true })
-        .eq("member_id", id)
-        .eq("scan_type", "entry")
-        .eq("status", "late")
-        .gte("scanned_at", `${thirtyDaysAgo}T00:00:00`),
-    ]);
+  // All entry scans since term start
+  const { data: allLogs } = await supabase
+    .from("attendance_logs")
+    .select("id, scanned_at, status, scan_type, late_reason")
+    .eq("member_id", id)
+    .eq("scan_type", "entry")
+    .gte("scanned_at", termStart.toISOString())
+    .order("scanned_at", { ascending: false });
 
-  const totalScanned = (presentCount ?? 0) + (lateCount ?? 0);
-  const attendancePct =
-    totalScanned > 0
-      ? Math.round(((presentCount ?? 0) / totalScanned) * 100)
-      : 0;
-  const today = new Date().toISOString().split("T")[0];
-  const todayLog = (recentLogs ?? []).find((l) => l.scanned_at.startsWith(today));
+  // Exit scans
+  const { data: exitLogs } = await supabase
+    .from("attendance_logs")
+    .select("id, scanned_at, status")
+    .eq("member_id", id)
+    .eq("scan_type", "exit")
+    .order("scanned_at", { ascending: false })
+    .limit(30);
+
+  // Compute stats
+  const presentCount = (allLogs ?? []).filter((l) => l.status === "present").length;
+  const lateCount    = (allLogs ?? []).filter((l) => l.status === "late").length;
+  const excusedCount = (allLogs ?? []).filter((l) => l.status === "excused").length;
+  const totalDays    = Math.max(
+    Math.ceil((termEnd.getTime() - termStart.getTime()) / (1000 * 60 * 60 * 24)),
+    1
+  );
+  const attendedDays  = presentCount + lateCount + excusedCount;
+  const attendancePct = Math.min(100, Math.round((attendedDays / totalDays) * 100));
 
   const canEdit   = ["admin", "teacher"].includes(orgUser.role);
   const canDelete = orgUser.role === "admin";
 
-  // Classes list for the edit form
   const CLASSES = [
     "Nursery 1","Nursery 2","Nursery 3",
     "Primary 1","Primary 2","Primary 3","Primary 4","Primary 5","Primary 6",
-    "JSS 1","JSS 2","JSS 3",
-    "SSS 1","SSS 2","SSS 3",
+    "JSS 1","JSS 2","JSS 3","SSS 1","SSS 2","SSS 3",
   ];
 
   return (
@@ -109,12 +112,9 @@ export default async function StudentProfilePage({
         <div className="card p-4 border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-950/20 flex items-center gap-3">
           <span className="text-lg">⚠️</span>
           <div>
-            <p className="text-sm font-bold text-amber-700 dark:text-amber-300">
-              Student suspended
-            </p>
+            <p className="text-sm font-bold text-amber-700 dark:text-amber-300">Student suspended</p>
             <p className="text-xs text-amber-600 dark:text-amber-400">
-              This student's QR card will be rejected at the gate with a suspension warning.
-              Reactivate to restore access.
+              QR card rejected at gate. Reactivate to restore access.
             </p>
           </div>
         </div>
@@ -139,11 +139,6 @@ export default async function StudentProfilePage({
               <span className={cn("badge", student.is_active ? "badge-green" : "badge-amber")}>
                 {student.is_active ? "Active" : "Suspended"}
               </span>
-              {todayLog && (
-                <span className={cn("badge", todayLog.status === "present" ? "badge-green" : "badge-amber")}>
-                  {todayLog.status === "present" ? "✓ Today" : "Late today"}
-                </span>
-              )}
             </div>
           </div>
           {student.class_name && <span className="badge-blue">{student.class_name}</span>}
@@ -174,39 +169,69 @@ export default async function StudentProfilePage({
           </p>
         </div>
 
-        {/* Stats + actions */}
-        <div className="sm:col-span-2 space-y-3">
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "Present (30d)", value: presentCount ?? 0, color: "text-green-600 dark:text-green-400" },
-              { label: "Late (30d)",    value: lateCount ?? 0,    color: "text-amber-600 dark:text-amber-400" },
-              { label: "Attendance",   value: `${attendancePct}%`, color: attendancePct >= 75 ? "text-green-600 dark:text-green-400" : "text-red-500" },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="card p-4 text-center">
-                <p className={cn("text-2xl font-bold", color)}>{value}</p>
-                <p className="text-xs text-slate-400 dark:text-[#4a7a5a] mt-1">{label}</p>
-              </div>
-            ))}
-          </div>
+        {/* Right column */}
+        <div className="sm:col-span-2 space-y-4">
 
-          {/* Attendance bar */}
-          <div className="card p-4">
-            <div className="flex justify-between text-xs text-slate-500 dark:text-[#6b9e7a] mb-2">
-              <span>30-day attendance rate</span>
-              <span className={attendancePct >= 75 ? "text-green-600 dark:text-green-400" : "text-red-500 font-semibold"}>
-                {attendancePct >= 75 ? "✓ Good standing" : "⚠ Below 75%"}
+          {/* ── Clean attendance summary ── */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Attendance</h3>
+              <span className="text-[10px] text-slate-400 dark:text-[#4a7a5a] font-mono">
+                {formatDate(termStart.toISOString())} – {formatDate(termEnd.toISOString())}
               </span>
             </div>
-            <div className="h-3 bg-green-100 dark:bg-green-950/30 rounded-full overflow-hidden">
+
+            {/* Big % + bar */}
+            <div className="flex items-end gap-3 mb-4">
+              <span className={cn(
+                "text-4xl font-bold font-mono",
+                attendancePct >= 75
+                  ? "text-green-600 dark:text-green-400"
+                  : attendancePct >= 50
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-red-500"
+              )}>
+                {attendancePct}%
+              </span>
+              <span className="text-xs text-slate-400 dark:text-[#4a7a5a] mb-1">attendance rate</span>
+            </div>
+
+            <div className="h-2.5 bg-green-100 dark:bg-green-950/30 rounded-full overflow-hidden mb-4">
               <div
-                className={cn("h-full rounded-full transition-all duration-700",
-                  attendancePct >= 75 ? "bg-green-500" : "bg-red-500")}
-                style={{ width: `${Math.min(attendancePct, 100)}%` }}
+                className={cn(
+                  "h-full rounded-full transition-all duration-700",
+                  attendancePct >= 75 ? "bg-green-500" :
+                  attendancePct >= 50 ? "bg-amber-400" : "bg-red-500"
+                )}
+                style={{ width: `${attendancePct}%` }}
               />
             </div>
+
+            {/* 4 stat chips */}
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { label: "Present",  value: presentCount,  color: "text-green-600 dark:text-green-400",  bg: "bg-green-50 dark:bg-green-950/20" },
+                { label: "Late",     value: lateCount,     color: "text-amber-600 dark:text-amber-400",  bg: "bg-amber-50 dark:bg-amber-950/20" },
+                { label: "Excused",  value: excusedCount,  color: "text-blue-600 dark:text-blue-400",    bg: "bg-blue-50 dark:bg-blue-950/20" },
+                { label: "Absent",   value: Math.max(0, totalDays - attendedDays), color: totalDays - attendedDays > 0 ? "text-red-500" : "text-slate-400", bg: "bg-red-50 dark:bg-red-950/10" },
+              ].map(({ label, value, color, bg }) => (
+                <div key={label} className={cn("rounded-xl p-2.5 text-center", bg)}>
+                  <p className={cn("text-lg font-bold", color)}>{value}</p>
+                  <p className="text-[10px] text-slate-400 dark:text-[#4a7a5a] mt-0.5">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            {attendancePct < 75 && (
+              <div className="mt-3 p-2.5 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40">
+                <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                  ⚠ Below 75% — may affect exam eligibility
+                </p>
+              </div>
+            )}
           </div>
 
-          {/* Actions — client component handles edit/suspend/delete */}
+          {/* Actions */}
           {(canEdit || canDelete) && (
             <StudentActions
               student={{
@@ -226,52 +251,19 @@ export default async function StudentProfilePage({
         </div>
       </div>
 
-      {/* Attendance history table */}
-      <div className="card overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#bbf7d0] dark:border-[#1a3a24]">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Attendance History</h3>
-          <span className="text-xs text-slate-400 dark:text-[#4a7a5a]">Last 30 entries</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-green-50 dark:bg-green-950/20">
-              <tr className="border-b border-[#bbf7d0] dark:border-[#1a3a24]">
-                <th className="table-th">Date &amp; Time</th>
-                <th className="table-th">Type</th>
-                <th className="table-th">Status</th>
-                <th className="table-th hidden sm:table-cell">Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(recentLogs ?? []).map((log) => (
-                <tr key={log.id} className="table-row">
-                  <td className="table-td">{formatDateTime(log.scanned_at)}</td>
-                  <td className="table-td"><span className="badge-gray capitalize">{log.scan_type}</span></td>
-                  <td className="table-td">
-                    <span className={cn("badge",
-                      log.status === "present" ? "badge-green" :
-                      log.status === "late"    ? "badge-amber" :
-                      log.status === "excused" ? "badge-blue"  : "badge-red"
-                    )}>
-                      {log.status === "present" ? "On time" : log.status}
-                    </span>
-                  </td>
-                  <td className="table-td hidden sm:table-cell text-slate-400 dark:text-[#4a7a5a] text-xs">
-                    {log.late_reason ?? "—"}
-                  </td>
-                </tr>
-              ))}
-              {(recentLogs ?? []).length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400 dark:text-[#4a7a5a]">
-                    No records yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* ── Expandable full attendance history ── */}
+      <AttendanceSummary
+        entryLogs={(allLogs ?? []).map((l) => ({
+          id: l.id,
+          scanned_at: l.scanned_at,
+          status: l.status,
+          late_reason: l.late_reason,
+        }))}
+        exitLogs={(exitLogs ?? []).map((l) => ({
+          id: l.id,
+          scanned_at: l.scanned_at,
+        }))}
+      />
     </div>
   );
 }

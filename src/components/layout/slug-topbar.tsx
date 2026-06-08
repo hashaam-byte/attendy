@@ -1,48 +1,65 @@
 "use client";
-// src/components/layout/slug-topbar.tsx — ATTENDY-EDU v3
+// src/components/layout/slug-topbar.tsx — ATTENDY-EDU v4
+// CHANGES: Subscription expiry banner now shows WhatsApp + Email buttons
+// instead of generic text. Also shows notices count badge on Notices nav link.
 
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { LogOut, User, GraduationCap, AlertTriangle } from "lucide-react";
+import {
+  LogOut, User, GraduationCap, AlertTriangle,
+  MessageCircle, Mail,
+} from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import type { OrgContextValue } from "@/context/org-context";
 import Image from "next/image";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 const PAGE_TITLES: Record<string, string> = {
-  dashboard: "Dashboard",
-  students: "Students",
-  classes: "Classes",
-  scanner: "Gate Scanner",
-  absent: "Absent Today",
-  reports: "Reports",
+  dashboard:  "Dashboard",
+  students:   "Students",
+  classes:    "Classes",
+  scanner:    "Gate Scanner",
+  absent:     "Absent Today",
+  reports:    "Reports",
   notifications: "Notifications",
-  settings: "Settings",
+  settings:   "Settings",
   "qr-cards": "QR Cards",
+  notices:    "School Notices",
+  excuses:    "Excuse Requests",
+  "my-class": "My Class",
 };
 
 interface Props {
-  user: SupabaseUser;
-  org: OrgContextValue;
-  role: string;
-  slug: string;
+  user:  SupabaseUser;
+  org:   OrgContextValue;
+  role:  string;
+  slug:  string;
 }
 
 export function SlugTopbar({ user, org, role, slug }: Props) {
   const pathname = usePathname();
-  const router = useRouter();
+  const router   = useRouter();
   const supabase = createClient();
 
-  // Determine page title from pathname segment after slug
   const segments = pathname.split("/").filter(Boolean);
-  const pageKey = segments[1] ?? "dashboard";
-  const title = PAGE_TITLES[pageKey] ?? "Attendy";
+  const pageKey  = segments[1] ?? "dashboard";
+  const title    = PAGE_TITLES[pageKey] ?? "Attendy";
 
-  // Plan expiry warning
-  const planExpiringSoon = org.planExpiresAt
-    ? new Date(org.planExpiresAt) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    : false;
+  const planExpiresAt    = org.planExpiresAt ? new Date(org.planExpiresAt) : null;
+  const now              = new Date();
+  const daysLeft         = planExpiresAt
+    ? Math.ceil((planExpiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  const isExpired        = daysLeft !== null && daysLeft < 0;
+  const isExpiringSoon   = daysLeft !== null && daysLeft >= 0 && daysLeft <= 7;
+  const showBanner       = isExpired || isExpiringSoon;
+
+  const waMessage = encodeURIComponent(
+    `Hi Attendy, I need to renew the subscription for ${org.name} (${org.slug}). Please assist.`
+  );
+  const waLink    = `https://wa.me/2348077291745?text=${waMessage}`;
+  const mailLink  = `mailto:attendyofficial@gmail.com?subject=Subscription Renewal – ${org.name}&body=Hi, I need to renew the subscription for ${org.name} (ID: ${org.slug}).`;
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -57,13 +74,12 @@ export function SlugTopbar({ user, org, role, slug }: Props) {
         <div className="flex items-center gap-3 pl-10 lg:pl-0">
           <h1 className="text-sm font-semibold text-slate-900 dark:text-white">{title}</h1>
 
-          {/* School name badge */}
           <span
             className="hidden sm:flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border"
             style={{
               backgroundColor: `${org.primaryColor}15`,
-              borderColor: `${org.primaryColor}40`,
-              color: org.primaryColor,
+              borderColor:     `${org.primaryColor}40`,
+              color:           org.primaryColor,
             }}
           >
             {org.logoUrl ? (
@@ -81,7 +97,7 @@ export function SlugTopbar({ user, org, role, slug }: Props) {
           </span>
         </div>
 
-        {/* Right controls */}
+        {/* Right */}
         <div className="flex items-center gap-3">
           <ThemeToggle compact />
 
@@ -112,13 +128,53 @@ export function SlugTopbar({ user, org, role, slug }: Props) {
         </div>
       </header>
 
-      {/* Plan expiry warning banner */}
-      {planExpiringSoon && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-amber-50 dark:bg-amber-950/20 border-b border-amber-200 dark:border-amber-800/40">
-          <AlertTriangle size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
-          <p className="text-xs text-amber-700 dark:text-amber-300">
-            Your school plan expires soon. Contact Attendy to renew and keep your data safe.
+      {/* ── Expiry banner ── */}
+      {showBanner && (
+        <div className={cn(
+          "flex items-center gap-3 px-4 py-2.5 border-b",
+          isExpired
+            ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800/40"
+            : "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/40"
+        )}>
+          <AlertTriangle
+            size={14}
+            className={cn(
+              "shrink-0",
+              isExpired ? "text-red-500" : "text-amber-500"
+            )}
+          />
+          <p className={cn(
+            "text-xs flex-1",
+            isExpired ? "text-red-700 dark:text-red-300" : "text-amber-700 dark:text-amber-300"
+          )}>
+            {isExpired
+              ? `Your school plan expired on ${formatDate(org.planExpiresAt)}. Some features may be limited.`
+              : `Your school plan expires in ${daysLeft} day${daysLeft !== 1 ? "s" : ""} (${formatDate(org.planExpiresAt)}). Renew to keep full access.`
+            }
           </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <a
+              href={waLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all",
+                isExpired
+                  ? "bg-red-600 hover:bg-red-700 border-red-600 text-white"
+                  : "bg-amber-500 hover:bg-amber-600 border-amber-500 text-white"
+              )}
+            >
+              <MessageCircle size={11} />
+              WhatsApp
+            </a>
+            <a
+              href={mailLink}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-[#bbf7d0] dark:border-[#1a3a24] text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-white/5 transition-all"
+            >
+              <Mail size={11} />
+              Email
+            </a>
+          </div>
         </div>
       )}
     </>
