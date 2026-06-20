@@ -507,16 +507,13 @@ export default async function DashboardPage({
             <Link
               key={href}
               href={href}
-              className="group flex flex-col items-center gap-2 p-3 rounded-xl border transition-all duration-200 text-center hover:-translate-y-0.5 hover:shadow-md"
-              style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-card)" }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = `${color}40`;
-                (e.currentTarget as HTMLElement).style.backgroundColor = `${color}08`;
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
-                (e.currentTarget as HTMLElement).style.backgroundColor = "var(--bg-card)";
-              }}
+              className="group flex flex-col items-center gap-2 p-3 rounded-xl border transition-all duration-200 text-center hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--card-border-hover)] hover:bg-[var(--card-bg-hover)]"
+              style={{
+                borderColor: "var(--border)",
+                backgroundColor: "var(--bg-card)",
+                "--card-border-hover": `${color}40`,
+                "--card-bg-hover": `${color}08`,
+              } as React.CSSProperties}
             >
               <div className="w-10 h-10 rounded-xl flex items-center justify-center transition-all group-hover:scale-110" style={{ backgroundColor: `${color}12` }}>
                 <Icon size={18} style={{ color }} />
