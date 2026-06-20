@@ -1,8 +1,12 @@
-// src/app/[slug]/(dashboard)/qr-cards/page.tsx — ATTENDY-EDU v3
+// src/app/[slug]/(dashboard)/qr-cards/page.tsx — ATTENDY-EDU v5
+// ADDED: "Bulk Print" button linking to /qr-cards/bulk — this page was
+// already a standalone route but had no discoverable entry point from
+// the UI (not on the sidebar, and nothing here linked to it either).
+
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Printer } from "lucide-react";
 import QRCardClient from "./qr-cards-client";
 import { StudentSelector } from "./student-selector";
 
@@ -46,7 +50,6 @@ export default async function QRCardPage({
       .order("full_name"),
   ]);
 
-  // If specific student selected
   let selectedStudent = id ? (students ?? []).find((s) => s.id === id) : null;
   if (!selectedStudent && students && students.length > 0) {
     selectedStudent = students[0];
@@ -57,7 +60,7 @@ export default async function QRCardPage({
       <div className="max-w-md space-y-4">
         <h2 className="page-title">QR Card Designer</h2>
         <div className="card p-8 text-center">
-          <p className="text-sm text-slate-500 dark:text-[#6b9e7a]">
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             No active students found. Register students first.
           </p>
           <Link href={`/${slug}/students/register`} className="btn-primary mt-4 inline-flex">
@@ -80,12 +83,19 @@ export default async function QRCardPage({
             {selectedStudent.full_name} · {selectedStudent.class_name ?? "No class"}
           </p>
         </div>
+        {/* ENTRY POINT for bulk print — previously unreachable from the UI */}
+        <Link
+          href={`/${slug}/qr-cards/bulk`}
+          className="btn-secondary text-sm shrink-0"
+        >
+          <Printer size={14} />
+          Bulk Print
+        </Link>
       </div>
 
-      {/* Student selector — must be a Client Component because of onChange */}
       {(students ?? []).length > 1 && (
         <div className="card p-4">
-          <label className="block text-xs font-medium text-slate-600 dark:text-green-200 mb-2">
+          <label className="block text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>
             Select student to preview card:
           </label>
           <StudentSelector

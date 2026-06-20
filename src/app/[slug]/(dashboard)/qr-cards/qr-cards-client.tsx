@@ -185,7 +185,7 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
         onClick={() => onChange(!value)}
         className={cn("w-9 h-5 rounded-full transition-colors relative", value ? "bg-green-600" : "bg-white/10")}
       >
-        <span className={cn("absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform", value ? "left-[18px]" : "left-0.5")} />
+        <span className={cn("absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform", value ? "left-4.5" : "left-0.5")} />
       </button>
     </div>
   );
@@ -822,6 +822,10 @@ export default function QRCardClient({
   return (
     <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 20, alignItems: "start" }}>
       <style>{`
+        @page {
+          size: A4;
+          margin: 10mm;
+        }
         .qr-designer-panel { background: #0a100d; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; position: sticky; top: 80px; max-height: calc(100vh - 100px); overflow-y: auto; }
         .qr-designer-panel::-webkit-scrollbar { width: 3px; }
         .qr-designer-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }

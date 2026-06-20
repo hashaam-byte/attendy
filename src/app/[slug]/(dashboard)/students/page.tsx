@@ -1,9 +1,10 @@
-// src/app/[slug]/(dashboard)/students/page.tsx — ATTENDY-EDU v3
+
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { StudentsClient } from "./students-client";
+import { hasFeature } from "@/lib/plan-features";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,7 @@ export default async function StudentsPage({
   const activeCount = (students ?? []).filter((s) => s.is_active).length;
   const maxMembers = org?.max_members ?? 30;
   const nearLimit = activeCount >= Math.floor(maxMembers * 0.9);
+  const canExport = hasFeature(org?.plan, "studentExport");
 
   return (
     <div className="space-y-5 max-w-6xl">
@@ -57,16 +59,22 @@ export default async function StudentsPage({
           </p>
         </div>
         {orgUser.role === "admin" && (
-          <Link href={`/${slug}/students/register`} className="btn-primary self-start">
-            <Plus size={15} />
-            Add Student
-          </Link>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link href={`/${slug}/students/import`} className="btn-secondary self-start text-sm">
+              <Upload size={14} />
+              Import
+            </Link>
+            <Link href={`/${slug}/students/register`} className="btn-primary self-start">
+              <Plus size={15} />
+              Add Student
+            </Link>
+          </div>
         )}
       </div>
 
       {nearLimit && (
-        <div className="card p-4 border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-950/20">
-          <p className="text-sm text-amber-700 dark:text-amber-300">
+        <div className="card p-4" style={{ borderColor: "var(--status-warning)", background: "var(--status-warning-bg)" }}>
+          <p className="text-sm" style={{ color: "var(--status-warning)" }}>
             ⚠️ You are at <strong>{activeCount}/{maxMembers}</strong> students (
             {Math.round((activeCount / maxMembers) * 100)}% capacity). Contact Attendy to upgrade.
           </p>
@@ -80,6 +88,7 @@ export default async function StudentsPage({
         maxMembers={maxMembers}
         activeCount={activeCount}
         slug={slug}
+        canExport={canExport}
       />
     </div>
   );

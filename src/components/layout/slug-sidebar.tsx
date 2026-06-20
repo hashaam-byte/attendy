@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 import { useState } from "react";
 import {
   LayoutDashboard, Users, BookOpen, ScanLine, BarChart3,
-  Bell, Settings, X, Menu, GraduationCap, UserX, QrCode,
-  CheckSquare, Megaphone, FileCheck, ChevronDown,
+  X, Menu, GraduationCap, UserX, QrCode,
+  CheckSquare, Megaphone, FileCheck,
 } from "lucide-react";
 
 type NavItem = {
@@ -21,13 +21,15 @@ type NavGroup = {
   items:  NavItem[];
 };
 
+// NOTE: Settings, Notifications, and Profile now live in the topbar
+// dropdown menu (see slug-topbar.tsx) — keeping the sidebar focused on
+// core workflows only.
 function buildNavGroups(slug: string, role: string): NavGroup[] {
   if (role === "gateman") {
     return [{
       items: [
         { label: "Scanner",  href: `/${slug}/scanner`,  icon: ScanLine },
         { label: "Notices",  href: `/${slug}/notices`,  icon: Megaphone },
-        { label: "Settings", href: `/${slug}/settings`, icon: Settings },
       ],
     }];
   }
@@ -47,12 +49,6 @@ function buildNavGroups(slug: string, role: string): NavGroup[] {
           { label: "My Class",        href: `/${slug}/my-class`,         icon: BookOpen },
           { label: "Class Register",  href: `/${slug}/my-class/confirm`, icon: CheckSquare },
           { label: "Scanner",         href: `/${slug}/scanner`,          icon: ScanLine },
-        ],
-      },
-      {
-        title: "Account",
-        items: [
-          { label: "Settings", href: `/${slug}/settings`, icon: Settings },
         ],
       },
     ];
@@ -84,13 +80,6 @@ function buildNavGroups(slug: string, role: string): NavGroup[] {
         { label: "Excuse Requests", href: `/${slug}/excuses`,      icon: FileCheck },
       ],
     },
-    {
-      title: "Admin",
-      items: [
-        { label: "Notifications",   href: `/${slug}/notifications`, icon: Bell },
-        { label: "Settings",        href: `/${slug}/settings`,      icon: Settings },
-      ],
-    },
   ];
 }
 
@@ -106,9 +95,9 @@ function NavContent({ slug, role, orgName, primaryColor, onClose }: Props & { on
   const groups   = buildNavGroups(slug, role);
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-[#0a1912]">
+    <div className="flex flex-col h-full" style={{ backgroundColor: "var(--bg-sidebar)" }}>
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-[#d1f0dc] dark:border-[#162e1f]">
+      <div className="flex items-center gap-3 px-4 py-4 border-b" style={{ borderColor: "var(--border)" }}>
         <div
           className="w-9 h-9 rounded-xl flex items-center justify-center shadow-md shrink-0"
           style={{ background: `linear-gradient(135deg, ${primaryColor}, ${primaryColor}cc)` }}
@@ -116,7 +105,7 @@ function NavContent({ slug, role, orgName, primaryColor, onClose }: Props & { on
           <GraduationCap size={18} className="text-white" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-[#0d1f14] dark:text-[#e4f5ec] leading-tight truncate">
+          <p className="text-sm font-bold leading-tight truncate" style={{ color: "var(--text-primary)" }}>
             {orgName}
           </p>
           <span
@@ -133,7 +122,7 @@ function NavContent({ slug, role, orgName, primaryColor, onClose }: Props & { on
         {groups.map((group, gi) => (
           <div key={gi} className={gi > 0 ? "pt-3" : ""}>
             {group.title && (
-              <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-[#7aab8a] dark:text-[#4a7a5a]">
+              <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--text-faint)" }}>
                 {group.title}
               </p>
             )}
@@ -149,22 +138,20 @@ function NavContent({ slug, role, orgName, primaryColor, onClose }: Props & { on
                   href={href}
                   onClick={onClose}
                   className={cn(
-                    "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 group",
-                    isActive
-                      ? "text-white shadow-sm"
-                      : "text-[#2e5c3e] dark:text-[#9ecfae] hover:bg-[#edfaf2] dark:hover:bg-[rgba(15,45,28,0.4)] hover:text-[#0d1f14] dark:hover:text-white"
+                    "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 group nav-link",
+                    isActive && "text-white shadow-sm"
                   )}
                   style={isActive ? {
                     background: `linear-gradient(135deg, ${primaryColor}, ${primaryColor}dd)`,
                     boxShadow: `0 2px 8px ${primaryColor}40`,
-                  } : {}}
+                  } : {
+                    color: "var(--text-secondary)",
+                  }}
                 >
                   <Icon
                     size={15}
-                    className={cn(
-                      "shrink-0 transition-all",
-                      isActive ? "text-white" : "text-[#5a9a6e] dark:text-[#6b9e7a] group-hover:text-[#1a9e50] dark:group-hover:text-[#2ec467]"
-                    )}
+                    className="shrink-0 transition-colors nav-icon"
+                    style={{ color: isActive ? "white" : "var(--icon-default)" }}
                   />
                   <span className="truncate">{label}</span>
                   {badge && (
@@ -179,14 +166,24 @@ function NavContent({ slug, role, orgName, primaryColor, onClose }: Props & { on
         ))}
       </nav>
 
+      <style>{`
+        .nav-link:not([style*="135deg"]):hover {
+          background-color: var(--accent-bg) !important;
+          color: var(--text-primary) !important;
+        }
+        .nav-link:not([style*="135deg"]):hover .nav-icon {
+          color: var(--icon-hover) !important;
+        }
+      `}</style>
+
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-[#d1f0dc] dark:border-[#162e1f]">
+      <div className="px-4 py-3 border-t" style={{ borderColor: "var(--border)" }}>
         <div className="flex items-center gap-2">
           <div
             className="w-2 h-2 rounded-full animate-pulse"
             style={{ backgroundColor: primaryColor }}
           />
-          <p className="text-[10px] text-[#7aab8a] dark:text-[#4a7a5a] font-medium">
+          <p className="text-[10px] font-medium" style={{ color: "var(--text-faint)" }}>
             Attendy Edu · Live
           </p>
         </div>
@@ -201,16 +198,20 @@ export function SlugSidebar({ slug, role, orgName, primaryColor }: Props) {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-56 shrink-0 flex-col border-r border-[#d1f0dc] dark:border-[#162e1f] h-full shadow-sm">
+      <aside
+        className="hidden lg:flex w-56 shrink-0 flex-col h-full shadow-sm border-r"
+        style={{ borderColor: "var(--border)" }}
+      >
         <NavContent slug={slug} role={role} orgName={orgName} primaryColor={primaryColor} />
       </aside>
 
       {/* Mobile hamburger */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-xl bg-white dark:bg-[#0d1e17] border border-[#d1f0dc] dark:border-[#162e1f] shadow-md"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-xl border shadow-md"
+        style={{ backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}
       >
-        <Menu size={17} className="text-[#1a9e50]" />
+        <Menu size={17} style={{ color: primaryColor }} />
       </button>
 
       {/* Mobile overlay */}
@@ -224,13 +225,15 @@ export function SlugSidebar({ slug, role, orgName, primaryColor }: Props) {
       {/* Mobile drawer */}
       <aside
         className={cn(
-          "lg:hidden fixed inset-y-0 left-0 z-50 w-64 border-r border-[#d1f0dc] dark:border-[#162e1f] shadow-2xl transform transition-transform duration-250",
+          "lg:hidden fixed inset-y-0 left-0 z-50 w-64 border-r shadow-2xl transform transition-transform duration-250",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
+        style={{ borderColor: "var(--border)" }}
       >
         <button
           onClick={() => setMobileOpen(false)}
-          className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-[#edfaf2] dark:hover:bg-[rgba(15,45,28,0.4)] text-[#7aab8a] z-10"
+          className="absolute top-4 right-4 p-1.5 rounded-lg z-10 transition-colors icon-muted"
+          style={{ backgroundColor: "var(--bg-card)" }}
         >
           <X size={15} />
         </button>

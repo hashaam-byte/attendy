@@ -1,10 +1,8 @@
-// src/app/api/excuse-requests/[id]/route.ts — ATTENDY-EDU v4
-// PATCH: approve (runs approve_excuse_request RPC + sends SMS) or reject
-
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
-import { sendSms } from "@/lib/sms";
+import { sendNotification } from "@/lib/notify";
+import { hasFeature } from "@/lib/plan-features";
 
 const adminSupabase = createAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,7 +36,6 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
 
-  // Fetch the request + member details
   const { data: excuse } = await adminSupabase
     .from("excuse_requests")
     .select(`
@@ -56,7 +53,6 @@ export async function PATCH(
   }
 
   if (action === "approve") {
-    // Call the RPC which marks attendance_logs as excused
     const { error: rpcErr } = await adminSupabase.rpc("approve_excuse_request", {
       excuse_id: id,
     });
@@ -64,12 +60,11 @@ export async function PATCH(
       return NextResponse.json({ error: rpcErr.message }, { status: 500 });
     }
 
-    // Send SMS to parent on approval
     const member = Array.isArray(excuse.members) ? excuse.members[0] : excuse.members;
     if (member?.parent_phone) {
       const { data: org } = await adminSupabase
         .from("organisations")
-        .select("name")
+        .select("name, whatsapp_enabled, settings, plan")
         .eq("id", orgUser.organisation_id)
         .single();
 
@@ -82,21 +77,30 @@ export async function PATCH(
         `${org?.name ?? "School"}: The excuse request for ${member.full_name} ` +
         `(${dateRange}) has been approved. Attendance marked as excused.`;
 
-      const smsResult = await sendSms(member.parent_phone, message);
+      const settings = (org?.settings as any) ?? {};
+      const useWhatsApp = org?.whatsapp_enabled === true
+        && settings.whatsapp_notifications === true
+        && hasFeature(org?.plan, "whatsappNotifications");
+
+      const result = await sendNotification({
+        to: member.parent_phone,
+        message,
+        orgId: orgUser.organisation_id,
+        useWhatsApp,
+      });
 
       await adminSupabase.from("notifications_log").insert({
         organisation_id: orgUser.organisation_id,
         member_id:       excuse.member_id,
-        channel:         "sms",
+        channel:         result.channel,
         recipient:       member.parent_phone,
         message,
-        status:          smsResult.ok ? "sent" : "failed",
-        provider_message_id: smsResult.messageId ?? null,
-        error_message:   smsResult.ok ? null : smsResult.error,
+        status:          result.ok ? "sent" : "failed",
+        provider_message_id: result.messageId ?? null,
+        error_message:   result.ok ? null : result.error,
       });
     }
   } else {
-    // Reject — no SMS, just update status
     await adminSupabase
       .from("excuse_requests")
       .update({ status: "rejected", reviewed_at: new Date().toISOString() })

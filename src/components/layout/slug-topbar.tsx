@@ -4,9 +4,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
-  LogOut, User, GraduationCap, AlertTriangle,
-  MessageCircle, Mail, ChevronDown, Settings,
-  Bell, KeyRound, Shield, X,
+  LogOut, GraduationCap, AlertTriangle,
+  MessageCircle, ChevronDown, Settings,
+  Bell, KeyRound, Shield, UserCircle,
 } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import type { OrgContextValue } from "@/context/org-context";
@@ -93,18 +93,26 @@ export function SlugTopbar({ user, org, role, slug }: Props) {
 
   const userInitial = (user.email ?? "U")[0].toUpperCase();
 
+  const dropdownLinks = [
+    { href: `/${slug}/settings`, icon: Settings, label: "Settings" },
+    { href: `/${slug}/settings/change-password`, icon: KeyRound, label: "Change Password" },
+    { href: `/${slug}/notifications`, icon: Bell, label: "Notifications" },
+  ];
+
   return (
     <>
-      <header className="h-14 shrink-0 flex items-center justify-between px-4 lg:px-6 border-b border-[#d1f0dc] dark:border-[#162e1f] bg-white dark:bg-[#0a1912] z-20">
-
+      <header
+        className="h-14 shrink-0 flex items-center justify-between px-4 lg:px-6 border-b z-20"
+        style={{ backgroundColor: "var(--bg-sidebar)", borderColor: "var(--border)" }}
+      >
         {/* Left – page title */}
         <div className="flex items-center gap-3 pl-10 lg:pl-0 min-w-0">
           <div className="min-w-0">
-            <h1 className="text-sm font-bold text-[#0d1f14] dark:text-[#e4f5ec] leading-tight truncate">
+            <h1 className="text-sm font-bold leading-tight truncate" style={{ color: "var(--text-primary)" }}>
               {title}
             </h1>
             {subtitle && (
-              <p className="text-[11px] text-[#7aab8a] hidden sm:block leading-tight">{subtitle}</p>
+              <p className="text-[11px] hidden sm:block leading-tight" style={{ color: "var(--text-muted)" }}>{subtitle}</p>
             )}
           </div>
 
@@ -130,24 +138,15 @@ export function SlugTopbar({ user, org, role, slug }: Props) {
         <div className="flex items-center gap-2">
           <ThemeToggle compact />
 
-          {/* Notification bell */}
-          <Link
-            href={`/${slug}/notifications`}
-            className="p-2 rounded-lg hover:bg-[#edfaf2] dark:hover:bg-[rgba(15,45,28,0.4)] text-[#7aab8a] hover:text-[#1a9e50] dark:hover:text-[#2ec467] transition-colors"
-          >
-            <Bell size={16} />
-          </Link>
-
-          {/* User dropdown */}
+          {/* User dropdown — now includes Settings, Notifications, Profile */}
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setShowDropdown(!showDropdown)}
-              className={cn(
-                "flex items-center gap-2 px-2.5 py-1.5 rounded-xl border transition-all",
-                showDropdown
-                  ? "bg-[#edfaf2] dark:bg-[rgba(15,45,28,0.5)] border-[#a3d9b5] dark:border-[#244532]"
-                  : "hover:bg-[#edfaf2] dark:hover:bg-[rgba(15,45,28,0.3)] border-transparent hover:border-[#d1f0dc] dark:hover:border-[#162e1f]"
-              )}
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border transition-all"
+              style={{
+                backgroundColor: showDropdown ? "var(--accent-bg)" : "transparent",
+                borderColor: showDropdown ? "var(--border-strong)" : "transparent",
+              }}
             >
               {/* Avatar */}
               <div
@@ -157,62 +156,82 @@ export function SlugTopbar({ user, org, role, slug }: Props) {
                 {userInitial}
               </div>
               <div className="hidden sm:block text-left">
-                <p className="text-xs font-semibold text-[#0d1f14] dark:text-[#e4f5ec] max-w-[100px] truncate leading-tight">
+                <p className="text-xs font-semibold max-w-25 truncate leading-tight" style={{ color: "var(--text-primary)" }}>
                   {user.email?.split("@")[0] ?? "User"}
                 </p>
-                <p className="text-[10px] text-[#7aab8a] capitalize leading-tight">{role}</p>
+                <p className="text-[10px] capitalize leading-tight" style={{ color: "var(--text-muted)" }}>{role}</p>
               </div>
-              <ChevronDown size={13} className={cn("text-[#7aab8a] transition-transform duration-200 hidden sm:block", showDropdown && "rotate-180")} />
+              <ChevronDown
+                size={13}
+                className={cn("transition-transform duration-200 hidden sm:block", showDropdown && "rotate-180")}
+                style={{ color: "var(--icon-default)" }}
+              />
             </button>
 
             {/* Dropdown */}
             {showDropdown && (
-              <div className="absolute right-0 top-[calc(100%+8px)] w-56 bg-white dark:bg-[#0d1e17] border border-[#d1f0dc] dark:border-[#162e1f] rounded-2xl shadow-xl dark:shadow-black/40 py-1.5 z-50">
+              <div
+                className="absolute right-0 top-[calc(100%+8px)] w-60 border rounded-2xl shadow-xl py-1.5 z-50"
+                style={{ backgroundColor: "var(--bg-card)", borderColor: "var(--border)", boxShadow: "var(--shadow-lg)" }}
+              >
                 {/* User info */}
-                <div className="px-4 py-2.5 border-b border-[#d1f0dc] dark:border-[#162e1f]">
-                  <p className="text-xs font-semibold text-[#0d1f14] dark:text-[#e4f5ec] truncate">{user.email}</p>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <div
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: org.primaryColor }}
-                    />
-                    <p className="text-[10px] text-[#7aab8a] capitalize font-medium">{org.name} · {role}</p>
+                <div className="px-4 py-3 border-b flex items-center gap-3" style={{ borderColor: "var(--border)" }}>
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
+                    style={{ background: `linear-gradient(135deg, ${org.primaryColor}, ${org.primaryColor}bb)` }}
+                  >
+                    {userInitial}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{user.email}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: org.primaryColor }} />
+                      <p className="text-[10px] capitalize font-medium truncate" style={{ color: "var(--text-muted)" }}>{org.name} · {role}</p>
+                    </div>
                   </div>
                 </div>
 
                 {/* Links */}
                 <div className="py-1">
-                  {[
-                    { href: `/${slug}/settings`, icon: Settings, label: "Settings" },
-                    { href: `/${slug}/settings/change-password`, icon: KeyRound, label: "Change Password" },
-                    { href: `/${slug}/notifications`, icon: Bell, label: "Notifications" },
-                  ].map(({ href, icon: Icon, label }) => (
+                  {dropdownLinks.map(({ href, icon: Icon, label }) => (
                     <Link
                       key={href}
                       href={href}
                       onClick={() => setShowDropdown(false)}
-                      className="flex items-center gap-3 px-4 py-2 text-sm text-[#2e5c3e] dark:text-[#9ecfae] hover:bg-[#edfaf2] dark:hover:bg-[rgba(15,45,28,0.4)] transition-colors"
+                      className="flex items-center gap-3 px-4 py-2 text-sm transition-colors dropdown-item"
+                      style={{ color: "var(--text-secondary)" }}
                     >
-                      <Icon size={14} className="text-[#7aab8a]" />
+                      <Icon size={14} style={{ color: "var(--icon-default)" }} />
                       {label}
                     </Link>
                   ))}
                 </div>
 
-                {/* Role badge */}
-                <div className="px-4 py-2 border-t border-[#d1f0dc] dark:border-[#162e1f]">
+                {/* Role badge + sign out */}
+                <div className="px-4 py-2 border-t" style={{ borderColor: "var(--border)" }}>
                   <div className="flex items-center gap-2 mb-2">
-                    <Shield size={12} className="text-[#7aab8a]" />
-                    <span className="text-[11px] text-[#7aab8a] capitalize">{role} access</span>
+                    <Shield size={12} style={{ color: "var(--icon-default)" }} />
+                    <span className="text-[11px] capitalize" style={{ color: "var(--text-muted)" }}>{role} access</span>
                   </div>
                   <button
                     onClick={handleSignOut}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 text-sm font-medium hover:bg-red-100 dark:hover:bg-red-950/30 transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                    style={{ backgroundColor: "var(--status-danger-bg)", color: "var(--status-danger)" }}
                   >
                     <LogOut size={14} />
                     Sign out
                   </button>
                 </div>
+
+                <style>{`
+                  .dropdown-item:hover {
+                    background-color: var(--accent-bg);
+                    color: var(--text-primary);
+                  }
+                  .dropdown-item:hover svg {
+                    color: var(--icon-hover) !important;
+                  }
+                `}</style>
               </div>
             )}
           </div>
@@ -221,14 +240,15 @@ export function SlugTopbar({ user, org, role, slug }: Props) {
 
       {/* Expiry banner */}
       {showBanner && (
-        <div className={cn(
-          "flex items-center gap-3 px-4 py-2 border-b text-xs",
-          isExpired
-            ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800/40"
-            : "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/40"
-        )}>
-          <AlertTriangle size={13} className={isExpired ? "text-red-500 shrink-0" : "text-amber-500 shrink-0"} />
-          <p className={cn("flex-1", isExpired ? "text-red-700 dark:text-red-300" : "text-amber-700 dark:text-amber-300")}>
+        <div
+          className="flex items-center gap-3 px-4 py-2 border-b text-xs"
+          style={{
+            backgroundColor: isExpired ? "var(--status-danger-bg)" : "var(--status-warning-bg)",
+            borderColor: "var(--border)",
+          }}
+        >
+          <AlertTriangle size={13} className="shrink-0" style={{ color: isExpired ? "var(--status-danger)" : "var(--status-warning)" }} />
+          <p className="flex-1" style={{ color: isExpired ? "var(--status-danger)" : "var(--status-warning)" }}>
             {isExpired
               ? `Plan expired on ${formatDate(org.planExpiresAt)}.`
               : `Plan expires in ${daysLeft} day${daysLeft !== 1 ? "s" : ""} (${formatDate(org.planExpiresAt)}).`

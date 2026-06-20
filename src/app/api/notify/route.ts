@@ -1,11 +1,8 @@
-// src/app/api/notify/route.ts — ATTENDY-EDU v4
-// Uses the new unified sendNotification() which tries WhatsApp first
-// then falls back to SMS. Logs the channel used.
-
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { sendNotification } from "@/lib/notify";
 import { buildArrivalSms, buildAbsenceSms } from "@/lib/sms";
+import { hasFeature } from "@/lib/plan-features";
 
 const serviceSupabase = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,7 +25,7 @@ export async function POST(req: NextRequest) {
       .single(),
     serviceSupabase
       .from("organisations")
-      .select("name, sms_sender_id, whatsapp_enabled, settings")
+      .select("name, sms_sender_id, whatsapp_enabled, settings, plan")
       .eq("id", org_id)
       .single(),
   ]);
@@ -37,9 +34,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ skipped: true, reason: "no_phone" });
   }
 
-  const settings       = (org?.settings as any) ?? {};
-  const useWhatsApp    = org?.whatsapp_enabled === true && settings.whatsapp_notifications === true;
-  const time           = new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" });
+  const settings = (org?.settings as any) ?? {};
+
+  // Plan-gate check: only allow WhatsApp routing if BOTH the org enabled
+  // it in settings AND their current plan actually includes the feature
+  // AND Termii has approved their WhatsApp sender (whatsapp_enabled).
+  const planQualifies = hasFeature(org?.plan, "whatsappNotifications");
+  const useWhatsApp = org?.whatsapp_enabled === true
+    && settings.whatsapp_notifications === true
+    && planQualifies;
+
+  const time = new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" });
 
   let message = "";
   if (type === "arrival") {
@@ -69,7 +74,6 @@ export async function POST(req: NextRequest) {
     useWhatsApp,
   });
 
-  // Log notification with channel info
   await serviceSupabase.from("notifications_log").insert({
     organisation_id:     org_id,
     member_id,
@@ -81,5 +85,10 @@ export async function POST(req: NextRequest) {
     error_message:       result.ok ? null : result.error,
   });
 
-  return NextResponse.json({ success: result.ok, channel: result.channel, error: result.error });
+  return NextResponse.json({
+    success: result.ok,
+    channel: result.channel,
+    error: result.error,
+    whatsapp_plan_blocked: !planQualifies && settings.whatsapp_notifications === true,
+  });
 }

@@ -1,16 +1,16 @@
 "use client";
-// src/app/portal/excuse/page.tsx — ATTENDY-EDU v4
-// Parent submits an excuse/permission slip for their child.
-// Accessed from portal/dashboard via a "Submit Excuse" button.
+// src/app/portal/excuse/page.tsx — ATTENDY-EDU v5
+// Theme-aware (light/dark via CSS variables). Parent submits an
+// excuse/permission slip for their child.
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
-  ArrowLeft, FileCheck, Loader2, CheckCircle,
-  AlertCircle, Calendar,
+  FileCheck, Loader2, CheckCircle,
+  AlertCircle, Sun, Moon,
 } from "lucide-react";
-import Link from "next/link";
+import { useTheme } from "next-themes";
 
 type Student = {
   id:              string;
@@ -23,6 +23,7 @@ type Student = {
 export default function ExcuseSubmissionPage() {
   const router   = useRouter();
   const supabase = createClient();
+  const { theme, setTheme } = useTheme();
 
   const [students,   setStudents]   = useState<Student[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -70,24 +71,39 @@ export default function ExcuseSubmissionPage() {
       });
 
     if (insertError) {
-      setError("Failed to submit. Please try again.");
+      console.error("[excuse submission]", insertError.message);
+      setError(
+        insertError.message.toLowerCase().includes("row-level security") ||
+        insertError.message.toLowerCase().includes("policy")
+          ? "Submission blocked by school's security settings. Please contact the school office directly, or ask your admin to check excuse_requests RLS policies."
+          : "Failed to submit. Please try again."
+      );
     } else {
       setSubmitted(true);
     }
     setLoading(false);
   }
 
+  const ThemeBtn = (
+    <button
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      style={{ width: 32, height: 32, borderRadius: 9, background: "var(--bg-subtle)", border: "1px solid var(--border)", cursor: "pointer", color: "var(--icon-default)", display: "flex", alignItems: "center", justifyContent: "center" }}
+    >
+      {theme === "dark" ? <Sun size={13} /> : <Moon size={13} />}
+    </button>
+  );
+
   if (submitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "#030a05" }}>
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--bg-base)" }}>
         <div className="text-center max-w-sm">
-          <div className="w-20 h-20 rounded-full bg-green-900/30 border border-green-700/40 flex items-center justify-center mx-auto mb-5">
-            <CheckCircle size={36} className="text-green-400" />
+          <div style={{ width: 80, height: 80, borderRadius: "50%", background: "var(--status-success-bg)", border: "1px solid var(--status-success)40", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+            <CheckCircle size={36} style={{ color: "var(--status-success)" }} />
           </div>
-          <h2 style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 18, fontWeight: 700, color: "white", marginBottom: 8 }}>
+          <h2 style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>
             Request submitted
           </h2>
-          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", marginBottom: 24, lineHeight: 1.6 }}>
+          <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 24, lineHeight: 1.6 }}>
             Your excuse request has been sent to the school. You will receive an SMS if it is approved.
           </p>
           <button
@@ -95,7 +111,7 @@ export default function ExcuseSubmissionPage() {
             style={{
               display: "inline-flex", alignItems: "center", gap: 8,
               padding: "12px 24px", borderRadius: 12,
-              background: "#16a34a", color: "white",
+              background: "var(--accent)", color: "white",
               fontFamily: "'DM Sans', sans-serif",
               fontSize: 14, fontWeight: 600, border: "none", cursor: "pointer",
             }}
@@ -108,51 +124,52 @@ export default function ExcuseSubmissionPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: "#030a05", fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+    <div className="min-h-screen" style={{ background: "var(--bg-base)", fontFamily: "'DM Sans', system-ui, sans-serif", color: "var(--text-primary)" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
       {/* Nav */}
-      <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <button
           onClick={() => router.push("/portal/dashboard")}
-          style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "monospace" }}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 12, fontWeight: 600 }}
         >
           ← Back to dashboard
         </button>
+        {ThemeBtn}
       </div>
 
       <div style={{ maxWidth: 440, margin: "0 auto", padding: "2rem 1rem" }}>
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.25)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1rem" }}>
-            <FileCheck size={24} color="#4ade80" />
+          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--accent-bg)", border: "1px solid var(--border-strong)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1rem" }}>
+            <FileCheck size={24} style={{ color: "var(--accent)" }} />
           </div>
-          <h1 style={{ fontSize: 19, fontWeight: 700, color: "rgba(255,255,255,0.9)", marginBottom: 4 }}>
+          <h1 style={{ fontSize: 19, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>
             Submit Excuse
           </h1>
-          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
             Request an excused absence for your child
           </p>
         </div>
 
         {/* Form */}
-        <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 20, overflow: "hidden" }}>
-          <div style={{ height: 1, background: "linear-gradient(90deg, transparent, rgba(34,197,94,0.5), transparent)" }} />
+        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 20, overflow: "hidden", boxShadow: "var(--shadow-sm)" }}>
+          <div style={{ height: 2, background: `linear-gradient(90deg, transparent, var(--accent), transparent)` }} />
           <form onSubmit={handleSubmit} style={{ padding: "1.75rem", display: "flex", flexDirection: "column", gap: 20 }}>
 
             {/* Student selector */}
             {students.length > 1 && (
               <div>
-                <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.28)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8, fontFamily: "monospace" }}>
+                <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>
                   Child
                 </label>
                 <select
                   value={selectedId}
                   onChange={(e) => setSelectedId(e.target.value)}
-                  style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "rgba(255,255,255,0.88)", fontSize: 14, fontFamily: "'DM Sans', sans-serif", outline: "none" }}
+                  className="input-base"
                 >
                   {students.map((s) => (
-                    <option key={s.id} value={s.id} style={{ background: "#050f07" }}>
+                    <option key={s.id} value={s.id}>
                       {s.full_name} {s.class_name ? `— ${s.class_name}` : ""}
                     </option>
                   ))}
@@ -163,7 +180,7 @@ export default function ExcuseSubmissionPage() {
             {/* Date range */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
-                <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.28)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8, fontFamily: "monospace" }}>
+                <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>
                   From
                 </label>
                 <input
@@ -171,11 +188,11 @@ export default function ExcuseSubmissionPage() {
                   value={form.start_date}
                   onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value, end_date: e.target.value }))}
                   required
-                  style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "rgba(255,255,255,0.88)", fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+                  className="input-base"
                 />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.28)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8, fontFamily: "monospace" }}>
+                <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>
                   To
                 </label>
                 <input
@@ -184,14 +201,14 @@ export default function ExcuseSubmissionPage() {
                   min={form.start_date}
                   onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
                   required
-                  style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "rgba(255,255,255,0.88)", fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+                  className="input-base"
                 />
               </div>
             </div>
 
             {/* Reason */}
             <div>
-              <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.28)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8, fontFamily: "monospace" }}>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>
                 Reason *
               </label>
               <textarea
@@ -200,32 +217,24 @@ export default function ExcuseSubmissionPage() {
                 required
                 rows={4}
                 placeholder="e.g. My child has a medical appointment and will be absent…"
-                style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "rgba(255,255,255,0.88)", fontSize: 14, fontFamily: "'DM Sans', sans-serif", outline: "none", resize: "none", boxSizing: "border-box" }}
+                className="input-base resize-none"
               />
-              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.2)", marginTop: 6, fontFamily: "monospace" }}>
+              <p style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 6 }}>
                 This will be reviewed by the school admin
               </p>
             </div>
 
             {error && (
-              <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", fontSize: 12, color: "#fca5a5", display: "flex", alignItems: "center", gap: 8 }}>
-                <AlertCircle size={13} /> {error}
+              <div style={{ padding: "10px 14px", borderRadius: 10, background: "var(--status-danger-bg)", border: "1px solid var(--status-danger)40", fontSize: 12, color: "var(--status-danger)", display: "flex", alignItems: "flex-start", gap: 8, lineHeight: 1.5 }}>
+                <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} /> {error}
               </div>
             )}
 
             <button
               type="submit"
               disabled={loading || !form.reason.trim()}
-              style={{
-                padding: "14px",
-                borderRadius: 12,
-                background: (loading || !form.reason.trim()) ? "rgba(255,255,255,0.05)" : "#16a34a",
-                color: (loading || !form.reason.trim()) ? "rgba(255,255,255,0.25)" : "white",
-                fontFamily: "'DM Sans', sans-serif",
-                fontSize: 14, fontWeight: 700,
-                border: "none", cursor: (loading || !form.reason.trim()) ? "not-allowed" : "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              }}
+              className="btn-primary"
+              style={{ padding: "14px", fontSize: 14, justifyContent: "center" }}
             >
               {loading
                 ? <><Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} /> Submitting…</>

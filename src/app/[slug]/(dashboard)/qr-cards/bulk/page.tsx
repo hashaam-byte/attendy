@@ -1,4 +1,5 @@
 "use client";
+
 import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -197,7 +198,6 @@ function FullCard({
           position: "relative",
           overflow: "hidden",
         }}>
-          {/* Decorative dots left */}
           <div style={{
             position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
             display: "grid", gridTemplateColumns: "repeat(3, 6px)", gap: 4,
@@ -207,7 +207,6 @@ function FullCard({
               <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "white" }} />
             ))}
           </div>
-          {/* Decorative dots right */}
           <div style={{
             position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
             display: "grid", gridTemplateColumns: "repeat(3, 6px)", gap: 4,
@@ -218,7 +217,6 @@ function FullCard({
             ))}
           </div>
 
-          {/* QR code */}
           <div style={{
             backgroundColor: "#ffffff",
             borderRadius: 14,
@@ -235,7 +233,6 @@ function FullCard({
             />
           </div>
 
-          {/* Scan label */}
           <div style={{
             display: "flex", alignItems: "center", gap: 8,
             backgroundColor: "rgba(255,255,255,0.12)",
@@ -273,39 +270,6 @@ function FullCard({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// ── Tiny preview card for the screen grid ──────────────────────
-function MiniCard({
-  student, schoolName, primaryColor, logoUrl, cardWidth, qrSize, borderRadius,
-  tagline, footerMotto, scanLabel, showLogo, showPhoto, showSchoolName,
-  showTagline, showClassName, showStudentId, showFooterMotto, fontFamily,
-}: Parameters<typeof FullCard>[0]) {
-  const scale = cardWidth / 220; // normalise to 220px preview width
-  return (
-    <div style={{ transform: `scale(${scale})`, transformOrigin: "top left", width: cardWidth, pointerEvents: "none" }}>
-      <FullCard
-        student={student}
-        schoolName={schoolName}
-        primaryColor={primaryColor}
-        logoUrl={logoUrl}
-        tagline={tagline}
-        footerMotto={footerMotto}
-        scanLabel={scanLabel}
-        cardWidth={220}
-        qrSize={110}
-        borderRadius={borderRadius}
-        showLogo={showLogo}
-        showPhoto={showPhoto}
-        showSchoolName={showSchoolName}
-        showTagline={showTagline}
-        showClassName={showClassName}
-        showStudentId={showStudentId}
-        showFooterMotto={showFooterMotto}
-        fontFamily={fontFamily}
-      />
     </div>
   );
 }
@@ -353,6 +317,7 @@ export default function BulkQRPage({
   const [loading,       setLoading]       = useState(true);
   const [printing,      setPrinting]      = useState(false);
   const [cfg,           setCfg]           = useState(DEFAULT);
+  const [cardsPerPage,  setCardsPerPage]  = useState<2 | 4 | 6 | 8>(6);
 
   useEffect(() => {
     (async () => {
@@ -393,7 +358,6 @@ export default function BulkQRPage({
       ].sort();
       setClasses(uniqueClasses);
 
-      // Load the card config the admin saved in the designer
       setCfg(loadCardConfig(slug));
       setLoading(false);
     })();
@@ -408,56 +372,72 @@ export default function BulkQRPage({
 
   function handlePrint() {
     setPrinting(true);
+    // Small delay lets React finish rendering the (already-mounted but
+    // visibility:hidden) print area before the browser snapshots it.
     setTimeout(() => {
       window.print();
       setPrinting(false);
-    }, 300);
+    }, 150);
   }
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 size={24} className="animate-spin text-green-500" />
+        <Loader2 size={24} className="animate-spin" style={{ color: "var(--accent)" }} />
       </div>
     );
   }
 
-  const cardProps = {
-    schoolName:      org?.name ?? "School",
-    primaryColor,
-    logoUrl,
-    tagline:         cfg.tagline,
-    footerMotto:     cfg.footerMotto,
-    scanLabel:       cfg.scanLabel,
-    cardWidth:       cfg.cardWidth,
-    qrSize:          cfg.qrSize,
-    borderRadius:    cfg.borderRadius,
-    showLogo:        cfg.showLogo,
-    showPhoto:       cfg.showPhoto,
-    showSchoolName:  cfg.showSchoolName,
-    showTagline:     cfg.showTagline,
-    showClassName:   cfg.showClassName,
-    showStudentId:   cfg.showStudentId,
-    showFooterMotto: cfg.showFooterMotto,
-    fontFamily:      cfg.fontFamily,
-  };
+  // Grid columns based on cards-per-page choice
+  const gridCols = cardsPerPage <= 2 ? 1 : cardsPerPage <= 4 ? 2 : 3;
 
   return (
     <>
-      {/* Print styles */}
+      {/* ── Print styles ──────────────────────────────────────
+          FIX: use `visibility` not `display` to avoid the
+          nested-ancestor display:none problem. Position the
+          print area absolutely so it fills the printed page
+          regardless of where it sits in the DOM. */}
       <style>{`
+        @page {
+          size: A4;
+          margin: 10mm;
+        }
         @media print {
-          body > * { display: none !important; }
-          #bulk-print-area { display: block !important; position: fixed; top: 0; left: 0; width: 100%; }
+          html, body { visibility: hidden !important; margin: 0; padding: 0; background: white !important; }
+          #bulk-print-area, #bulk-print-area * { visibility: visible !important; }
+          #bulk-print-area {
+            position: absolute !important;
+            top: 0; left: 0;
+            width: 100%;
+            margin: 0; padding: 0;
+            background: white !important;
+          }
           #bulk-print-area .print-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            padding: 10px;
+            grid-template-columns: repeat(${gridCols}, 1fr);
+            gap: 8mm;
+            padding: 0;
           }
-          #bulk-print-area .print-card { break-inside: avoid; page-break-inside: avoid; }
+          #bulk-print-area .print-card {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            display: flex;
+            justify-content: center;
+          }
         }
-        @media screen { #bulk-print-area { display: none; } }
+        /* On screen, the print area is invisible but still rendered
+           (so window.print() always has content) and takes no layout
+           space. */
+        @media screen {
+          #bulk-print-area {
+            position: absolute;
+            top: -99999px;
+            left: -99999px;
+            visibility: hidden;
+            pointer-events: none;
+          }
+        }
       `}</style>
 
       {/* Screen UI */}
@@ -475,9 +455,9 @@ export default function BulkQRPage({
 
         {/* Controls */}
         <div className="card p-5 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-green-200 mb-1.5">
+              <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
                 Select Class
               </label>
               <select
@@ -491,6 +471,21 @@ export default function BulkQRPage({
                     {c} ({students.filter((s) => s.class_name === c).length} students)
                   </option>
                 ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                Cards per A4 page
+              </label>
+              <select
+                className="input-base"
+                value={cardsPerPage}
+                onChange={(e) => setCardsPerPage(Number(e.target.value) as 2 | 4 | 6 | 8)}
+              >
+                <option value={2}>2 (large, 1 column)</option>
+                <option value={4}>4 (2 columns)</option>
+                <option value={6}>6 (3 columns)</option>
+                <option value={8}>8 (3 columns, compact)</option>
               </select>
             </div>
             <div className="flex items-end gap-2">
@@ -507,12 +502,12 @@ export default function BulkQRPage({
             </div>
           </div>
 
-          <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40 text-xs text-green-700 dark:text-green-300 space-y-1">
+          <div className="p-3 rounded-lg text-xs space-y-1" style={{ background: "var(--accent-bg)", border: "1px solid var(--border-strong)", color: "var(--text-secondary)" }}>
             <p className="font-semibold">Printing tips:</p>
-            <p>• Cards use the same design as the individual QR Card Designer — edit there to change logo, colours, motto</p>
-            <p>• Best on A4 paper — 3 cards per row, ~6 per page</p>
+            <p>• Print opens an A4-sized preview — choose your printer and confirm</p>
+            <p>• Cards use the same design as the QR Card Designer — edit there to change logo, colours, motto</p>
             <p>• Use cardstock (200gsm+) or laminate after printing</p>
-            <p>• In the print dialog, set margins to "None" or "Minimum"</p>
+            <p>• In the print dialog, set margins to "Default" — A4 page size is already set for you</p>
             <p>• Each card has the student's unique QR code — do not photocopy</p>
           </div>
         </div>
@@ -520,70 +515,76 @@ export default function BulkQRPage({
         {/* Preview grid */}
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-4">
-            <BookOpen size={16} className="text-green-600 dark:text-green-400" />
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+            <BookOpen size={16} style={{ color: "var(--accent)" }} />
+            <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
               Preview — {filtered.length} card{filtered.length !== 1 ? "s" : ""}
             </h3>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
-            {filtered.slice(0, 12).map((student) => {
-              // Mini preview: scale the full card down to ~160px wide
-              const previewWidth = 160;
-              const scale = previewWidth / cfg.cardWidth;
-              return (
-                <div
-                  key={student.id}
-                  style={{
-                    width: previewWidth,
-                    height: Math.round(cfg.cardWidth * 1.56 * scale), // approx card aspect ratio
-                    overflow: "hidden",
-                    borderRadius: Math.round(cfg.borderRadius * scale),
-                    boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-                    flexShrink: 0,
-                  }}
-                >
-                  <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
-                    <FullCard
-                      student={student}
-                      schoolName={org?.name ?? "School"}
-                      primaryColor={primaryColor}
-                      logoUrl={logoUrl}
-                      tagline={cfg.tagline}
-                      footerMotto={cfg.footerMotto}
-                      scanLabel={cfg.scanLabel}
-                      cardWidth={cfg.cardWidth}
-                      qrSize={cfg.qrSize}
-                      borderRadius={cfg.borderRadius}
-                      showLogo={cfg.showLogo}
-                      showPhoto={cfg.showPhoto}
-                      showSchoolName={cfg.showSchoolName}
-                      showTagline={cfg.showTagline}
-                      showClassName={cfg.showClassName}
-                      showStudentId={cfg.showStudentId}
-                      showFooterMotto={cfg.showFooterMotto}
-                      fontFamily={cfg.fontFamily}
-                    />
+          {filtered.length === 0 ? (
+            <div className="py-12 text-center text-sm" style={{ color: "var(--text-faint)" }}>
+              No students in this selection.
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
+              {filtered.slice(0, 12).map((student) => {
+                const previewWidth = 160;
+                const scale = previewWidth / cfg.cardWidth;
+                return (
+                  <div
+                    key={student.id}
+                    style={{
+                      width: previewWidth,
+                      height: Math.round(cfg.cardWidth * 1.56 * scale),
+                      overflow: "hidden",
+                      borderRadius: Math.round(cfg.borderRadius * scale),
+                      boxShadow: "var(--shadow-md)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
+                      <FullCard
+                        student={student}
+                        schoolName={org?.name ?? "School"}
+                        primaryColor={primaryColor}
+                        logoUrl={logoUrl}
+                        tagline={cfg.tagline}
+                        footerMotto={cfg.footerMotto}
+                        scanLabel={cfg.scanLabel}
+                        cardWidth={cfg.cardWidth}
+                        qrSize={cfg.qrSize}
+                        borderRadius={cfg.borderRadius}
+                        showLogo={cfg.showLogo}
+                        showPhoto={cfg.showPhoto}
+                        showSchoolName={cfg.showSchoolName}
+                        showTagline={cfg.showTagline}
+                        showClassName={cfg.showClassName}
+                        showStudentId={cfg.showStudentId}
+                        showFooterMotto={cfg.showFooterMotto}
+                        fontFamily={cfg.fontFamily}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              {filtered.length > 12 && (
+                <div className="flex items-center justify-center rounded-xl border-2 border-dashed p-4 text-center" style={{ width: 160, borderColor: "var(--border-strong)" }}>
+                  <div>
+                    <p className="text-2xl font-bold" style={{ color: "var(--accent)" }}>
+                      +{filtered.length - 12}
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: "var(--text-faint)" }}>more cards</p>
                   </div>
                 </div>
-              );
-            })}
-            {filtered.length > 12 && (
-              <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-[#bbf7d0] dark:border-[#1a3a24] p-4 text-center" style={{ width: 160 }}>
-                <div>
-                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    +{filtered.length - 12}
-                  </p>
-                  <p className="text-xs text-slate-400 dark:text-[#4a7a5a] mt-1">more cards</p>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Hidden print area — full quality cards */}
-      <div id="bulk-print-area" style={{ display: "none" }}>
+      {/* Print area — ALWAYS rendered (just visually hidden on screen) so
+          window.print() always has real content. */}
+      <div id="bulk-print-area">
         <div className="print-grid">
           {filtered.map((student) => (
             <div key={student.id} className="print-card">

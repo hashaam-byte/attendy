@@ -104,7 +104,7 @@ export function QRCardClient({
       </div>
 
       {/* Card preview */}
-      <div className="flex justify-center">
+      <div id="qr-print-area" className="flex justify-center">
         <div
           ref={cardRef}
           className="bg-white rounded-2xl shadow-xl overflow-hidden"
@@ -167,6 +167,7 @@ export function QRCardClient({
 
       {/* Print styles */}
       <style>{`
+        @page { size: A4; margin: 10mm; }
         @media print {
           body * { visibility: hidden !important; }
           #qr-print-area, #qr-print-area * { visibility: visible !important; }
