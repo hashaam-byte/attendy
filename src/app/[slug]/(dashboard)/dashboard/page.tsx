@@ -5,7 +5,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import InteractiveLink from "@/components/interactive-link";
 import {
   Users, UserCheck, UserX, Clock,
   ScanLine, AlertTriangle, ArrowRight,
@@ -395,9 +394,8 @@ export default async function DashboardPage({
                 return (
                   <div
                     key={log.id}
-                    className="flex items-center gap-3 px-5 py-3 border-b last:border-0 transition-colors"
+                    className="flex items-center gap-3 px-5 py-3 border-b last:border-0 transition-colors hover:bg-(--accent-bg)"
                     style={{ borderColor: "var(--border)" }}
-                    
                   >
                     <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cfg.dotColor }} />
                     <div className="flex-1 min-w-0">
@@ -506,12 +504,19 @@ export default async function DashboardPage({
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
           {quickActions.map(({ href, label, sub, icon: Icon, color }) => (
-            <InteractiveLink
+            <Link
               key={href}
               href={href}
               className="group flex flex-col items-center gap-2 p-3 rounded-xl border transition-all duration-200 text-center hover:-translate-y-0.5 hover:shadow-md"
               style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-card)" }}
-              color={color}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.borderColor = `${color}40`;
+                (e.currentTarget as HTMLElement).style.backgroundColor = `${color}08`;
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                (e.currentTarget as HTMLElement).style.backgroundColor = "var(--bg-card)";
+              }}
             >
               <div className="w-10 h-10 rounded-xl flex items-center justify-center transition-all group-hover:scale-110" style={{ backgroundColor: `${color}12` }}>
                 <Icon size={18} style={{ color }} />
@@ -520,7 +525,7 @@ export default async function DashboardPage({
                 <p className="text-[11px] font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>{label}</p>
                 <p className="text-[10px] mt-0.5 leading-tight" style={{ color: "var(--text-faint)" }}>{sub}</p>
               </div>
-            </InteractiveLink>
+            </Link>
           ))}
         </div>
       </div>
