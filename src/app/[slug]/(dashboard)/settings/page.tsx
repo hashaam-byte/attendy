@@ -43,10 +43,8 @@ export default async function SettingsPage({
           </div>
           <Link
             href={`/${slug}/settings/change-password`}
-            className="flex items-center justify-between p-3 rounded-xl border transition-all group"
+            className="flex items-center justify-between p-3 rounded-xl border transition-all group hover:bg-(--accent-bg) hover:border-(--border-strong)"
             style={{ borderColor: "var(--border)" }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "var(--accent-bg)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--border-strong)"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; }}
           >
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "var(--accent-bg)" }}>
