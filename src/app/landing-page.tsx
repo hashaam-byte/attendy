@@ -9,6 +9,7 @@ import {
   GraduationCap, QrCode, Bell, BarChart3, Users, CheckCircle,
   ArrowRight, Smartphone, Zap, Search, Loader2,
   Wifi, MessageCircle, X, ChevronDown, ChevronUp, Shield, Clock,
+  Download,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -182,6 +183,7 @@ const SOCIAL_PROOF = [
 // ─────────────────────────────────────────────────────────────
 export default function LandingPage() {
   const router = useRouter();
+  const apkUrl = process.env.NEXT_PUBLIC_ANDROID_APK_URL;
 
   // Hero entrance
   const [heroIn,   setHeroIn]   = useState(false);
@@ -905,6 +907,23 @@ export default function LandingPage() {
           border-top: 1px solid rgba(255,255,255,0.05);
         }
 
+        /* Download button (Android APK) */
+        .atd-btn-download {
+          display: inline-flex; align-items: center; gap: 8px;
+          padding: 13px 22px; border-radius: 14px;
+          background: rgba(34,197,94,0.08);
+          border: 1px solid rgba(34,197,94,0.3);
+          color: #4ade80;
+          font-weight: 700; font-size: 15px;
+          text-decoration: none; cursor: pointer;
+          transition: background 0.15s, transform 0.15s;
+          font-family: inherit;
+        }
+        .atd-btn-download:hover {
+          background: rgba(34,197,94,0.14);
+          transform: translateY(-2px);
+        }
+
         /* Responsive nav links */
         @media(max-width:768px){
           .atd-nav-links { display: none; }
@@ -978,6 +997,12 @@ export default function LandingPage() {
               <button className="atd-btn-ghost" onClick={() => setShowModal(true)}>
                 Staff Login <ArrowRight size={14} />
               </button>
+              {apkUrl && (
+                <a className="atd-btn-download" href={apkUrl} download>
+                  <Download size={16} />
+                  Download for Android
+                </a>
+              )}
             </div>
 
             <div className="atd-trust-row" style={s(560)}>
@@ -1347,6 +1372,7 @@ export default function LandingPage() {
                 <div className="atd-footer-col-title">Access</div>
                 <a href="/portal" className="atd-footer-link">Parent Portal</a>
                 <button className="atd-footer-link" onClick={() => setShowModal(true)}>Staff Login</button>
+                {apkUrl && <a href={apkUrl} download className="atd-footer-link">Download Android App</a>}
               </div>
             </div>
           </div>
