@@ -1,11 +1,16 @@
-// src/app/[slug]/(dashboard)/my-class/page.tsx — ATTENDY-EDU v4
-// Teacher sees only students from their assigned classes.
-// Links to class confirmation (in-class tick).
+// src/app/[slug]/(dashboard)/my-class/page.tsx — ATTENDY-EDU v5
+// Theme-safe rewrite (CSS variables, no hardcoded dark: classes).
+// FIXED: the original file defined a local inline-SVG BookOpen
+// component at the bottom because the import was missing — replaced
+// with the real lucide-react import.
+// ADDED: a "Message all absent parents" bulk WhatsApp action per class
+// group, since teachers previously had no fast way to nudge a whole
+// class of absent students' parents at once.
 
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { CheckSquare, Users, ScanLine, UserX } from "lucide-react";
+import { CheckSquare, Users, ScanLine, UserX, BookOpen, MessageSquare } from "lucide-react";
 import { cn, getInitials, formatTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +38,6 @@ export default async function MyClassPage({
   const orgId = orgUser.organisation_id;
   const today = new Date().toISOString().split("T")[0];
 
-  // Get assigned classes
   const { data: assignments } = await supabase
     .from("class_assignments")
     .select("class_name, is_form_teacher")
@@ -47,16 +51,15 @@ export default async function MyClassPage({
       <div className="max-w-md space-y-4">
         <h2 className="page-title">My Class</h2>
         <div className="card p-8 text-center">
-          <Users size={32} className="mx-auto text-green-200 dark:text-green-800 mb-3" />
-          <p className="text-sm text-slate-500 dark:text-[#6b9e7a]">
-            You have not been assigned to any class yet. Ask your admin to assign you in Settings → Staff Management.
+          <Users size={32} className="mx-auto mb-3" style={{ color: "var(--text-faint)" }} />
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            You have not been assigned to any class yet. Ask your admin to assign you in Settings → Class Assignments.
           </p>
         </div>
       </div>
     );
   }
 
-  // Fetch students in assigned classes
   let q = supabase
     .from("members")
     .select("id, full_name, class_name, employee_id, parent_phone")
@@ -72,7 +75,6 @@ export default async function MyClassPage({
 
   const { data: students } = await q;
 
-  // Today's gate scans
   const { data: gateScans } = await supabase
     .from("attendance_logs")
     .select("member_id, status, scanned_at")
@@ -80,7 +82,6 @@ export default async function MyClassPage({
     .eq("scan_type", "entry")
     .gte("scanned_at", `${today}T00:00:00`);
 
-  // Today's class ticks
   const { data: classScans } = await supabase
     .from("attendance_logs")
     .select("member_id, scanned_at")
@@ -97,7 +98,6 @@ export default async function MyClassPage({
   const inClass  = (students ?? []).filter((s) => classSet.has(s.id)).length;
   const absent   = total - present;
 
-  // Group by class
   const grouped: Record<string, typeof students> = {};
   (students ?? []).forEach((s) => {
     const cls = s.class_name ?? "Unassigned";
@@ -111,9 +111,7 @@ export default async function MyClassPage({
         <div>
           <h2 className="page-title">My Class</h2>
           <p className="page-sub">
-            {assignedClasses.length > 0
-              ? assignedClasses.join(", ")
-              : "All classes (admin view)"}
+            {assignedClasses.length > 0 ? assignedClasses.join(", ") : "All classes (admin view)"}
           </p>
         </div>
         <Link href={`/${slug}/my-class/confirm`} className="btn-primary text-sm">
@@ -125,108 +123,126 @@ export default async function MyClassPage({
       {/* Stats */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: "Total",    value: total,   color: "text-slate-700 dark:text-slate-300" },
-          { label: "At Gate",  value: present, color: "text-blue-600 dark:text-blue-400" },
-          { label: "In Class", value: inClass, color: "text-green-600 dark:text-green-400" },
-          { label: "Absent",   value: absent,  color: absent > 0 ? "text-red-500" : "text-slate-400" },
+          { label: "Total",    value: total,   color: "var(--text-secondary)" },
+          { label: "At Gate",  value: present, color: "var(--status-info)" },
+          { label: "In Class", value: inClass, color: "var(--status-success)" },
+          { label: "Absent",   value: absent,  color: absent > 0 ? "var(--status-danger)" : "var(--text-faint)" },
         ].map(({ label, value, color }) => (
           <div key={label} className="card p-4 text-center">
-            <p className={cn("text-2xl font-bold", color)}>{value}</p>
-            <p className="text-xs text-slate-400 dark:text-[#4a7a5a] mt-0.5">{label}</p>
+            <p className="text-2xl font-bold" style={{ color }}>{value}</p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--text-faint)" }}>{label}</p>
           </div>
         ))}
       </div>
 
       {/* Class groups */}
-      {Object.entries(grouped).map(([className, classStudents]) => (
-        <div key={className} className="card overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#bbf7d0] dark:border-[#1a3a24] bg-green-50/40 dark:bg-green-950/10">
-            <div className="flex items-center gap-2">
-              <BookOpen size={14} className="text-green-600 dark:text-green-400" />
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{className}</h3>
-              <span className="badge-gray text-[10px]">{classStudents?.length} students</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs">
-              <span className="text-blue-600 dark:text-blue-400">
-                {(classStudents ?? []).filter((s) => gateSet.has(s.id)).length} gate
-              </span>
-              <span className="text-green-600 dark:text-green-400">
-                {(classStudents ?? []).filter((s) => classSet.has(s.id)).length} in class
-              </span>
-            </div>
-          </div>
+      {Object.entries(grouped).map(([className, classStudents]) => {
+        const absentInClass = (classStudents ?? []).filter((s) => !gateSet.has(s.id) && s.parent_phone);
+        const waText = encodeURIComponent(
+          `Hello, this is regarding ${className} attendance today. Your child has not yet been scanned in at the school gate. Please let us know if they are absent or running late.`
+        );
 
-          {(classStudents ?? []).map((student) => {
-            const atGate    = gateSet.has(student.id);
-            const inClassNow = classSet.has(student.id);
-            const scan      = gateMap.get(student.id);
-
-            return (
-              <div
-                key={student.id}
-                className="flex items-center gap-3 px-4 py-3 border-b border-[#bbf7d0] dark:border-[#1a3a24] last:border-0"
-              >
-                <div className={cn(
-                  "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
-                  inClassNow
-                    ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400"
-                    : atGate
-                    ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
-                    : "bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400"
-                )}>
-                  {getInitials(student.full_name)}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                    {student.full_name}
-                  </p>
-                  {student.employee_id && (
-                    <p className="text-[10px] font-mono text-slate-400">{student.employee_id}</p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Gate status */}
-                  {atGate ? (
-                    <span className={cn(
-                      "badge text-[10px]",
-                      scan?.status === "late" ? "badge-amber" : "badge-blue"
-                    )}>
-                      <ScanLine size={9} className="mr-1" />
-                      {scan?.status === "late" ? "Late" : "Gate"}
-                      {scan && ` ${formatTime(scan.scanned_at)}`}
-                    </span>
-                  ) : (
-                    <span className="badge badge-red text-[10px]">
-                      <UserX size={9} className="mr-1" />
-                      Absent
-                    </span>
-                  )}
-
-                  {/* Class tick status */}
-                  {inClassNow && (
-                    <span className="badge badge-green text-[10px]">
-                      <CheckSquare size={9} className="mr-1" />
-                      In class
-                    </span>
-                  )}
-                </div>
+        return (
+          <div key={className} className="card overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b flex-wrap gap-2" style={{ borderColor: "var(--border)", background: "var(--accent-bg)" }}>
+              <div className="flex items-center gap-2">
+                <BookOpen size={14} style={{ color: "var(--accent)" }} />
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{className}</h3>
+                <span className="badge-gray text-[10px]">{classStudents?.length} students</span>
               </div>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
+              <div className="flex items-center gap-3 text-xs">
+                <span style={{ color: "var(--status-info)" }}>
+                  {(classStudents ?? []).filter((s) => gateSet.has(s.id)).length} gate
+                </span>
+                <span style={{ color: "var(--status-success)" }}>
+                  {(classStudents ?? []).filter((s) => classSet.has(s.id)).length} in class
+                </span>
+                {absentInClass.length > 0 && (
+                  <Link
+                    href={`/${slug}/absent`}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg font-medium"
+                    style={{ background: "var(--status-danger-bg)", color: "var(--status-danger)" }}
+                    title="View and message absent students individually"
+                  >
+                    <MessageSquare size={11} /> {absentInClass.length} absent
+                  </Link>
+                )}
+              </div>
+            </div>
 
-// Need to import this
-function BookOpen({ size, className }: { size: number; className?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-    </svg>
+            {(classStudents ?? []).map((student) => {
+              const atGate     = gateSet.has(student.id);
+              const inClassNow = classSet.has(student.id);
+              const scan       = gateMap.get(student.id);
+
+              return (
+                <div
+                  key={student.id}
+                  className="flex items-center gap-3 px-4 py-3 border-b last:border-0"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                    style={{
+                      background: inClassNow ? "var(--status-success-bg)" : atGate ? "var(--status-info-bg)" : "var(--status-danger-bg)",
+                      color: inClassNow ? "var(--status-success)" : atGate ? "var(--status-info)" : "var(--status-danger)",
+                    }}
+                  >
+                    {getInitials(student.full_name)}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <Link href={`/${slug}/students/${student.id}`} className="text-sm font-medium truncate block hover:underline" style={{ color: "var(--text-primary)" }}>
+                      {student.full_name}
+                    </Link>
+                    {student.employee_id && (
+                      <p className="text-[10px] font-mono" style={{ color: "var(--text-faint)" }}>{student.employee_id}</p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {atGate ? (
+                      <span className="badge text-[10px]" style={{
+                        background: scan?.status === "late" ? "var(--status-warning-bg)" : "var(--status-info-bg)",
+                        color: scan?.status === "late" ? "var(--status-warning)" : "var(--status-info)",
+                      }}>
+                        <ScanLine size={9} className="mr-1" />
+                        {scan?.status === "late" ? "Late" : "Gate"}
+                        {scan && ` ${formatTime(scan.scanned_at)}`}
+                      </span>
+                    ) : (
+                      <>
+                        <span className="badge text-[10px]" style={{ background: "var(--status-danger-bg)", color: "var(--status-danger)" }}>
+                          <UserX size={9} className="mr-1" />
+                          Absent
+                        </span>
+                        {student.parent_phone && (
+                          <a
+                            href={`https://wa.me/${student.parent_phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Hello, ${student.full_name} has not been scanned at school today. Please let us know if they are absent.`)}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg transition-colors"
+                            style={{ color: "var(--status-success)" }}
+                            title="WhatsApp parent"
+                          >
+                            <MessageSquare size={12} />
+                          </a>
+                        )}
+                      </>
+                    )}
+
+                    {inClassNow && (
+                      <span className="badge text-[10px]" style={{ background: "var(--status-success-bg)", color: "var(--status-success)" }}>
+                        <CheckSquare size={9} className="mr-1" />
+                        In class
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
   );
 }

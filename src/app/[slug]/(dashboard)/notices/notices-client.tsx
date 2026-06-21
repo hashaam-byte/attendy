@@ -1,12 +1,12 @@
 "use client";
-// src/app/[slug]/(dashboard)/notices/notices-client.tsx — ATTENDY-EDU v4
+// src/app/[slug]/(dashboard)/notices/notices-client.tsx — ATTENDY-EDU v5
+// Theme-safe rewrite.
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
 import {
-  Megaphone, Plus, Trash2, Loader2, AlertTriangle,
-  Bell, Calendar, Users, X, CheckCircle,
+  Megaphone, Plus, Trash2, Loader2,
+  Bell, Calendar, Users, X,
 } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -22,10 +22,10 @@ type Notice = {
 };
 
 const PRIORITY_CONFIG = {
-  low:    { label: "Low",    color: "badge-gray",  bar: "bg-slate-300 dark:bg-slate-600" },
-  normal: { label: "Normal", color: "badge-blue",  bar: "bg-blue-400" },
-  high:   { label: "High",   color: "badge-amber", bar: "bg-amber-400" },
-  urgent: { label: "Urgent", color: "badge-red",   bar: "bg-red-500" },
+  low:    { label: "Low",    color: "badge-gray",  barVar: "var(--border-strong)" },
+  normal: { label: "Normal", color: "badge-blue",  barVar: "var(--status-info)" },
+  high:   { label: "High",   color: "badge-amber", barVar: "var(--status-warning)" },
+  urgent: { label: "Urgent", color: "badge-red",   barVar: "var(--status-danger)" },
 };
 
 interface Props {
@@ -36,9 +36,8 @@ interface Props {
   slug:    string;
 }
 
-export function NoticesClient({ notices: initial, classes, role, orgId, slug }: Props) {
+export function NoticesClient({ notices: initial, classes, role, orgId }: Props) {
   const supabase = createClient();
-  const router   = useRouter();
 
   const [notices,     setNotices]     = useState<Notice[]>(initial);
   const [showForm,    setShowForm]    = useState(false);
@@ -112,19 +111,19 @@ export function NoticesClient({ notices: initial, classes, role, orgId, slug }: 
       {showForm && isAdmin && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="card w-full max-w-md shadow-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-[#bbf7d0] dark:border-[#1a3a24]">
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
               <div className="flex items-center gap-2">
-                <Megaphone size={15} className="text-green-600 dark:text-green-400" />
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">New Notice</h3>
+                <Megaphone size={15} style={{ color: "var(--accent)" }} />
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>New Notice</h3>
               </div>
-              <button onClick={() => setShowForm(false)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-green-950/30 text-slate-400">
+              <button onClick={() => setShowForm(false)} className="p-1.5 rounded-lg transition-colors" style={{ color: "var(--icon-default)" }}>
                 <X size={15} />
               </button>
             </div>
 
             <form onSubmit={handleCreate} className="overflow-y-auto flex-1 px-5 py-5 space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-green-200 mb-1.5">
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
                   Title <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -137,7 +136,7 @@ export function NoticesClient({ notices: initial, classes, role, orgId, slug }: 
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-green-200 mb-1.5">
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
                   Body <span className="text-red-500">*</span>
                 </label>
                 <textarea
@@ -151,19 +150,17 @@ export function NoticesClient({ notices: initial, classes, role, orgId, slug }: 
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-green-200 mb-1.5">Priority</label>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>Priority</label>
                 <div className="flex gap-2">
                   {(["low", "normal", "high", "urgent"] as const).map((p) => (
                     <button
                       key={p}
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, priority: p }))}
-                      className={cn(
-                        "flex-1 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize",
-                        form.priority === p
-                          ? "bg-green-600 border-green-600 text-white"
-                          : "border-[#bbf7d0] dark:border-[#1a3a24] text-slate-500 hover:bg-green-50 dark:hover:bg-green-950/20"
-                      )}
+                      className="flex-1 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize"
+                      style={form.priority === p
+                        ? { background: "var(--accent)", borderColor: "var(--accent)", color: "white" }
+                        : { borderColor: "var(--border)", color: "var(--text-muted)" }}
                     >
                       {p}
                     </button>
@@ -173,8 +170,8 @@ export function NoticesClient({ notices: initial, classes, role, orgId, slug }: 
 
               {classes.length > 0 && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-green-200 mb-1.5">
-                    Target Classes <span className="text-slate-400 font-normal">(empty = all classes)</span>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                    Target Classes <span className="font-normal" style={{ color: "var(--text-faint)" }}>(empty = all classes)</span>
                   </label>
                   <div className="flex flex-wrap gap-1.5">
                     {classes.map((c) => (
@@ -182,12 +179,10 @@ export function NoticesClient({ notices: initial, classes, role, orgId, slug }: 
                         key={c}
                         type="button"
                         onClick={() => toggleClass(c)}
-                        className={cn(
-                          "px-2.5 py-1 rounded-lg text-xs font-medium border transition-all",
-                          form.target_classes.includes(c)
-                            ? "bg-green-600 border-green-600 text-white"
-                            : "border-[#bbf7d0] dark:border-[#1a3a24] text-slate-500 hover:bg-green-50"
-                        )}
+                        className="px-2.5 py-1 rounded-lg text-xs font-medium border transition-all"
+                        style={form.target_classes.includes(c)
+                          ? { background: "var(--accent)", borderColor: "var(--accent)", color: "white" }
+                          : { borderColor: "var(--border)", color: "var(--text-muted)" }}
                       >
                         {c}
                       </button>
@@ -197,8 +192,8 @@ export function NoticesClient({ notices: initial, classes, role, orgId, slug }: 
               )}
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-green-200 mb-1.5">
-                  Expiry Date <span className="text-slate-400 font-normal">(optional — auto-hides after this date)</span>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                  Expiry Date <span className="font-normal" style={{ color: "var(--text-faint)" }}>(optional — auto-hides after this date)</span>
                 </label>
                 <input
                   type="date"
@@ -223,8 +218,8 @@ export function NoticesClient({ notices: initial, classes, role, orgId, slug }: 
       {/* Notices list */}
       {notices.length === 0 ? (
         <div className="card p-12 text-center">
-          <Bell size={32} className="mx-auto text-green-200 dark:text-green-800 mb-3" />
-          <p className="text-sm text-slate-400 dark:text-[#4a7a5a]">
+          <Bell size={32} className="mx-auto mb-3" style={{ color: "var(--text-faint)" }} />
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             No active notices.
             {isAdmin && " Create one to inform all staff."}
           </p>
@@ -237,32 +232,29 @@ export function NoticesClient({ notices: initial, classes, role, orgId, slug }: 
             return (
               <div
                 key={notice.id}
-                className={cn(
-                  "card p-5 relative overflow-hidden",
-                  isUrgent && "border-red-300 dark:border-red-700/50"
-                )}
+                className="card p-5 relative overflow-hidden"
+                style={isUrgent ? { borderColor: "var(--status-danger)" } : {}}
               >
-                {/* Priority bar */}
-                <div className={cn("absolute left-0 top-0 bottom-0 w-1", cfg.bar)} />
+                <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: cfg.barVar }} />
                 <div className="pl-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <h3 className="font-semibold text-slate-900 dark:text-white text-sm">
+                        <h3 className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
                           {notice.title}
                         </h3>
                         <span className={cn("badge text-[10px]", cfg.color)}>{cfg.label}</span>
                         {notice.target_classes && notice.target_classes.length > 0 && (
-                          <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                          <div className="flex items-center gap-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
                             <Users size={10} />
                             {notice.target_classes.join(", ")}
                           </div>
                         )}
                       </div>
-                      <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                      <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
                         {notice.body}
                       </p>
-                      <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
+                      <div className="flex items-center gap-3 mt-2 text-xs" style={{ color: "var(--text-faint)" }}>
                         <span>{formatDate(notice.created_at)}</span>
                         {notice.expires_at && (
                           <span className="flex items-center gap-1">
@@ -276,7 +268,8 @@ export function NoticesClient({ notices: initial, classes, role, orgId, slug }: 
                       <button
                         onClick={() => handleDelete(notice.id)}
                         disabled={deleting === notice.id}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors shrink-0"
+                        className="p-1.5 rounded-lg transition-colors shrink-0"
+                        style={{ color: "var(--text-faint)" }}
                       >
                         {deleting === notice.id
                           ? <Loader2 size={14} className="animate-spin" />

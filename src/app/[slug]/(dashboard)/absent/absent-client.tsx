@@ -1,5 +1,6 @@
 "use client";
-// src/app/[slug]/(dashboard)/absent/absent-client.tsx — ATTENDY-EDU v3
+// src/app/[slug]/(dashboard)/absent/absent-client.tsx — ATTENDY-EDU v5
+// Theme-safe rewrite.
 
 import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -113,15 +114,15 @@ export function AbsentClient({ absentStudents, total, orgId, role, today, slug }
 
       {/* Attendance bar */}
       <div className="card p-4">
-        <div className="flex justify-between text-xs text-slate-500 dark:text-[#6b9e7a] mb-2">
+        <div className="flex justify-between text-xs mb-2" style={{ color: "var(--text-muted)" }}>
           <span>{presentCount} present</span>
           <span className="font-semibold">{attendancePct}%</span>
           <span>{displayStudents.length} absent</span>
         </div>
-        <div className="h-3 bg-red-100 dark:bg-red-950/30 rounded-full overflow-hidden">
+        <div className="h-3 rounded-full overflow-hidden" style={{ background: "var(--status-danger-bg)" }}>
           <div
-            className="h-full bg-green-500 rounded-full transition-all duration-700"
-            style={{ width: `${attendancePct}%` }}
+            className="h-full rounded-full transition-all duration-700"
+            style={{ width: `${attendancePct}%`, background: "var(--status-success)" }}
           />
         </div>
       </div>
@@ -129,7 +130,7 @@ export function AbsentClient({ absentStudents, total, orgId, role, today, slug }
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
         <div className="relative flex-1 min-w-[180px]">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-faint)" }} />
           <input
             className="input-base pl-9"
             placeholder="Search students…"
@@ -146,31 +147,32 @@ export function AbsentClient({ absentStudents, total, orgId, role, today, slug }
 
       {displayStudents.length === 0 ? (
         <div className="card p-12 text-center">
-          <CheckCircle size={40} className="mx-auto text-green-400 mb-3" />
-          <p className="font-semibold text-slate-900 dark:text-white">All students accounted for!</p>
-          <p className="text-sm text-slate-400 dark:text-[#4a7a5a] mt-1">
+          <CheckCircle size={40} className="mx-auto mb-3" style={{ color: "var(--status-success)" }} />
+          <p className="font-semibold" style={{ color: "var(--text-primary)" }}>All students accounted for!</p>
+          <p className="text-sm mt-1" style={{ color: "var(--text-faint)" }}>
             Everyone has been scanned or marked excused today.
           </p>
         </div>
       ) : (
         <div className="card overflow-hidden">
-          <div className="px-5 py-3 border-b border-[#bbf7d0] dark:border-[#1a3a24] bg-red-50 dark:bg-red-950/10 flex items-center gap-2">
-            <AlertTriangle size={14} className="text-red-500" />
-            <span className="text-sm font-medium text-red-700 dark:text-red-400">
+          <div className="px-5 py-3 border-b flex items-center gap-2" style={{ borderColor: "var(--border)", background: "var(--status-danger-bg)" }}>
+            <AlertTriangle size={14} style={{ color: "var(--status-danger)" }} />
+            <span className="text-sm font-medium" style={{ color: "var(--status-danger)" }}>
               {displayStudents.length} student{displayStudents.length !== 1 ? "s" : ""} not yet scanned today
             </span>
           </div>
 
           {displayStudents.map((student) => (
             <div key={student.id}>
-              <div className="flex items-center gap-3 px-5 py-4 border-b border-[#bbf7d0] dark:border-[#1a3a24] last:border-0 hover:bg-red-50/50 dark:hover:bg-red-950/10 transition-colors">
-                <div className="w-9 h-9 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-sm font-bold text-red-700 dark:text-red-400 shrink-0">
+              <div className="flex items-center gap-3 px-5 py-4 border-b last:border-0 transition-colors" style={{ borderColor: "var(--border)" }}>
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ background: "var(--status-danger-bg)", color: "var(--status-danger)" }}>
                   {getInitials(student.full_name)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <Link
                     href={`/${slug}/students/${student.id}`}
-                    className="font-medium text-slate-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 truncate block"
+                    className="font-medium truncate block hover:underline"
+                    style={{ color: "var(--text-primary)" }}
                   >
                     {student.full_name}
                   </Link>
@@ -181,7 +183,8 @@ export function AbsentClient({ absentStudents, total, orgId, role, today, slug }
                     {student.parent_phone && (
                       <a
                         href={`tel:${student.parent_phone}`}
-                        className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
+                        className="flex items-center gap-1 text-[10px] transition-colors"
+                        style={{ color: "var(--text-faint)" }}
                       >
                         <Phone size={10} />{student.parent_phone}
                       </a>
@@ -195,7 +198,8 @@ export function AbsentClient({ absentStudents, total, orgId, role, today, slug }
                       <a
                         href={`https://wa.me/${student.parent_phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Hello, ${student.full_name} has not been scanned at school today. Please let us know if they are absent.`)}`}
                         target="_blank" rel="noopener noreferrer"
-                        className="p-1.5 rounded-lg text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/30 transition-colors"
+                        className="p-1.5 rounded-lg transition-colors"
+                        style={{ color: "var(--status-success)" }}
                         title="WhatsApp parent"
                       >
                         <MessageSquare size={14} />
@@ -214,8 +218,8 @@ export function AbsentClient({ absentStudents, total, orgId, role, today, slug }
               </div>
 
               {excusing === student.id && (
-                <div className="px-5 py-4 bg-amber-50 dark:bg-amber-950/10 border-b border-[#bbf7d0] dark:border-[#1a3a24]">
-                  <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-3">
+                <div className="px-5 py-4 border-b" style={{ borderColor: "var(--border)", background: "var(--status-warning-bg)" }}>
+                  <p className="text-xs font-medium mb-3" style={{ color: "var(--status-warning)" }}>
                     Mark {student.full_name} as excused today
                   </p>
                   <div className="flex flex-wrap gap-2 mb-3">
@@ -223,12 +227,10 @@ export function AbsentClient({ absentStudents, total, orgId, role, today, slug }
                       <button
                         key={r}
                         onClick={() => setExcuseReason(r)}
-                        className={cn(
-                          "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all",
-                          excuseReason === r
-                            ? "bg-amber-100 dark:bg-amber-900/30 border-amber-400 text-amber-700 dark:text-amber-300"
-                            : "border-[#bbf7d0] dark:border-[#1a3a24] text-slate-600 dark:text-green-300 hover:bg-amber-50"
-                        )}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
+                        style={excuseReason === r
+                          ? { background: "var(--status-warning-bg)", borderColor: "var(--status-warning)", color: "var(--status-warning)" }
+                          : { borderColor: "var(--border)", color: "var(--text-secondary)" }}
                       >
                         {r}
                       </button>
@@ -247,7 +249,8 @@ export function AbsentClient({ absentStudents, total, orgId, role, today, slug }
                     <button
                       onClick={() => handleExcuse(student)}
                       disabled={loading === student.id}
-                      className="btn-primary text-xs py-1.5 bg-amber-600 hover:bg-amber-700"
+                      className="btn-primary text-xs py-1.5"
+                      style={{ background: "var(--status-warning)" }}
                     >
                       {loading === student.id
                         ? <Loader2 size={12} className="animate-spin" />

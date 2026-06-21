@@ -1,4 +1,7 @@
-// src/app/[slug]/(dashboard)/classes/page.tsx — ATTENDY-EDU v3
+// src/app/[slug]/(dashboard)/classes/page.tsx — ATTENDY-EDU v5
+// Theme-safe rewrite — replaced all hardcoded dark: Tailwind classes
+// and raw green hex values with CSS variables.
+
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -82,25 +85,28 @@ export default async function ClassesPage({
       <div className="card p-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <TrendingUp size={15} className="text-green-600 dark:text-green-400" />
-            <span className="text-sm font-medium text-slate-700 dark:text-green-200">School-wide attendance today</span>
+            <TrendingUp size={15} style={{ color: "var(--accent)" }} />
+            <span className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>School-wide attendance today</span>
           </div>
-          <span className={cn("text-sm font-bold", overallPct >= 75 ? "text-green-600 dark:text-green-400" : "text-red-500")}>
+          <span className="text-sm font-bold" style={{ color: overallPct >= 75 ? "var(--accent)" : "var(--status-danger)" }}>
             {overallPct}%
           </span>
         </div>
-        <div className="h-2.5 bg-green-100 dark:bg-green-950/30 rounded-full overflow-hidden">
+        <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
           <div
-            className={cn("h-full rounded-full transition-all duration-700", overallPct >= 75 ? "bg-green-500" : "bg-amber-400")}
-            style={{ width: `${overallPct}%` }}
+            className="h-full rounded-full transition-all duration-700"
+            style={{
+              width: `${overallPct}%`,
+              background: overallPct >= 75 ? "var(--accent)" : "var(--status-warning)",
+            }}
           />
         </div>
       </div>
 
       {classes.length === 0 ? (
         <div className="card p-12 text-center">
-          <BookOpen size={32} className="mx-auto text-green-200 dark:text-green-800 mb-3" />
-          <p className="text-sm text-slate-400 dark:text-[#4a7a5a]">
+          <BookOpen size={32} className="mx-auto mb-3" style={{ color: "var(--text-faint)" }} />
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             No classes yet. Add students and assign them to classes.
           </p>
           <Link href={`/${slug}/students/register`} className="btn-primary mt-4 inline-flex">
@@ -119,8 +125,8 @@ export default async function ClassesPage({
               <div key={className} className="card p-5 space-y-3 hover:shadow-md hover:-translate-y-0.5 transition-all">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <BookOpen size={16} className="text-green-600 dark:text-green-400" />
-                    <h3 className="font-semibold text-slate-900 dark:text-white">{className}</h3>
+                    <BookOpen size={16} style={{ color: "var(--accent)" }} />
+                    <h3 className="font-semibold" style={{ color: "var(--text-primary)" }}>{className}</h3>
                   </div>
                   <span className="badge-gray">
                     <Users size={10} className="mr-1" />
@@ -130,43 +136,40 @@ export default async function ClassesPage({
 
                 <div className="grid grid-cols-3 gap-2 text-center text-xs">
                   <div>
-                    <p className="font-bold text-green-600 dark:text-green-400">{data.present}</p>
-                    <p className="text-slate-400 dark:text-[#4a7a5a]">Present</p>
+                    <p className="font-bold" style={{ color: "var(--status-success)" }}>{data.present}</p>
+                    <p style={{ color: "var(--text-faint)" }}>Present</p>
                   </div>
                   <div>
-                    <p className="font-bold text-amber-600 dark:text-amber-400">{data.late}</p>
-                    <p className="text-slate-400 dark:text-[#4a7a5a]">Late</p>
+                    <p className="font-bold" style={{ color: "var(--status-warning)" }}>{data.late}</p>
+                    <p style={{ color: "var(--text-faint)" }}>Late</p>
                   </div>
                   <div>
-                    <p className={cn("font-bold", absent > 0 ? "text-red-500" : "text-slate-400")}>{absent}</p>
-                    <p className="text-slate-400 dark:text-[#4a7a5a]">Absent</p>
+                    <p className="font-bold" style={{ color: absent > 0 ? "var(--status-danger)" : "var(--text-faint)" }}>{absent}</p>
+                    <p style={{ color: "var(--text-faint)" }}>Absent</p>
                   </div>
                 </div>
 
                 <div>
-                  <div className="h-2 bg-green-100 dark:bg-green-950/30 rounded-full overflow-hidden">
+                  <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
                     <div
-                      className={cn(
-                        "h-full rounded-full transition-all duration-700",
-                        pct === 100 ? "bg-green-500" :
-                        pct >= 75 ? "bg-green-400" :
-                        pct >= 50 ? "bg-amber-400" : "bg-red-400"
-                      )}
-                      style={{ width: `${pct}%` }}
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{
+                        width: `${pct}%`,
+                        background: pct === 100 ? "var(--accent)" : pct >= 75 ? "var(--accent)" : pct >= 50 ? "var(--status-warning)" : "var(--status-danger)",
+                      }}
                     />
                   </div>
-                  <p className={cn(
-                    "text-xs font-medium mt-1.5",
-                    pct >= 75 ? "text-green-600 dark:text-green-400" :
-                    pct >= 50 ? "text-amber-600 dark:text-amber-400" : "text-red-500"
-                  )}>
+                  <p className="text-xs font-medium mt-1.5" style={{
+                    color: pct >= 75 ? "var(--accent)" : pct >= 50 ? "var(--status-warning)" : "var(--status-danger)"
+                  }}>
                     {pct}% attendance rate
                   </p>
                 </div>
 
                 <Link
                   href={`/${slug}/absent`}
-                  className="text-xs text-slate-400 dark:text-[#4a7a5a] hover:text-green-600 dark:hover:text-green-400 transition-colors"
+                  className="text-xs transition-colors inline-block"
+                  style={{ color: "var(--text-faint)" }}
                 >
                   View absent students →
                 </Link>

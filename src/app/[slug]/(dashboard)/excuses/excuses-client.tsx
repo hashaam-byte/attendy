@@ -1,5 +1,6 @@
 "use client";
-// src/app/[slug]/(dashboard)/excuses/excuses-client.tsx — ATTENDY-EDU v4
+// src/app/[slug]/(dashboard)/excuses/excuses-client.tsx — ATTENDY-EDU v5
+// Theme-safe rewrite.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -38,7 +39,7 @@ const STATUS_CONFIG = {
   rejected: { label: "Rejected", color: "badge-red",   icon: XCircle },
 };
 
-export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
+export function ExcusesClient({ requests: initial, slug }: Props) {
   const router = useRouter();
   const [requests, setRequests] = useState<ExcuseRequest[]>(initial);
   const [acting,   setActing]   = useState<string | null>(null);
@@ -56,7 +57,6 @@ export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
         body: JSON.stringify({ action }),
       });
       if (res.ok) {
-        const data = await res.json();
         setRequests((prev) =>
           prev.map((r) =>
             r.id === id
@@ -77,7 +77,7 @@ export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
         <h2 className="page-title">Excuse Requests</h2>
         <p className="page-sub">
           {pendingCount > 0
-            ? <span className="text-amber-600 dark:text-amber-400 font-medium">{pendingCount} pending review</span>
+            ? <span className="font-medium" style={{ color: "var(--status-warning)" }}>{pendingCount} pending review</span>
             : "No pending requests"
           }
         </p>
@@ -89,15 +89,11 @@ export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-medium transition-all capitalize",
-              filter === f
-                ? "bg-green-600 text-white"
-                : "text-slate-500 dark:text-[#6b9e7a] hover:bg-green-50 dark:hover:bg-green-950/20"
-            )}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all capitalize"
+            style={filter === f ? { background: "var(--accent)", color: "white" } : { color: "var(--text-muted)" }}
           >
             {f} {f === "pending" && pendingCount > 0 && (
-              <span className="ml-1 bg-amber-500 text-white text-[10px] font-bold px-1.5 rounded-full">
+              <span className="ml-1 text-white text-[10px] font-bold px-1.5 rounded-full" style={{ background: "var(--status-warning)" }}>
                 {pendingCount}
               </span>
             )}
@@ -107,8 +103,8 @@ export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
 
       {filtered.length === 0 ? (
         <div className="card p-12 text-center">
-          <FileCheck size={32} className="mx-auto text-green-200 dark:text-green-800 mb-3" />
-          <p className="text-sm text-slate-400 dark:text-[#4a7a5a]">No {filter === "all" ? "" : filter} requests.</p>
+          <FileCheck size={32} className="mx-auto mb-3" style={{ color: "var(--text-faint)" }} />
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>No {filter === "all" ? "" : filter} requests.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -120,15 +116,11 @@ export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
             const isSameDay = req.start_date === req.end_date;
 
             return (
-              <div key={req.id} className={cn(
-                "card p-5 space-y-3",
-                isPending && "border-amber-200 dark:border-amber-800/40"
-              )}>
-                {/* Header */}
+              <div key={req.id} className="card p-5 space-y-3" style={isPending ? { borderColor: "var(--status-warning)" } : {}}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <p className="font-semibold text-slate-900 dark:text-white">
+                      <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
                         {req.members?.full_name ?? "Unknown Student"}
                       </p>
                       {req.members?.class_name && (
@@ -140,8 +132,7 @@ export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
                       </span>
                     </div>
 
-                    {/* Date range */}
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-[#6b9e7a] mb-1">
+                    <div className="flex items-center gap-1.5 text-xs mb-1" style={{ color: "var(--text-muted)" }}>
                       <Calendar size={11} />
                       {isSameDay
                         ? formatDate(req.start_date)
@@ -149,15 +140,13 @@ export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
                       }
                     </div>
 
-                    {/* Reason */}
-                    <p className="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-white/[0.03] border border-[#bbf7d0] dark:border-[#1a3a24] rounded-lg p-2.5 leading-relaxed">
+                    <p className="text-sm rounded-lg p-2.5 leading-relaxed border" style={{ background: "var(--bg-subtle)", borderColor: "var(--border)", color: "var(--text-secondary)" }}>
                       {req.reason}
                     </p>
 
-                    {/* Submitted by / parent contact */}
                     <div className="flex items-center gap-3 mt-2 flex-wrap">
                       {req.submitted_by && (
-                        <span className="text-xs text-slate-400">
+                        <span className="text-xs" style={{ color: "var(--text-faint)" }}>
                           Submitted by: {req.submitted_by}
                         </span>
                       )}
@@ -165,7 +154,8 @@ export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
                         <div className="flex items-center gap-2">
                           <a
                             href={`tel:${req.members.parent_phone}`}
-                            className="flex items-center gap-1 text-xs text-slate-400 hover:text-green-600 dark:hover:text-green-400"
+                            className="flex items-center gap-1 text-xs transition-colors"
+                            style={{ color: "var(--text-faint)" }}
                           >
                             <Phone size={10} />
                             {req.members.parent_phone}
@@ -174,7 +164,8 @@ export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
                             href={`https://wa.me/${req.members.parent_phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Hello, regarding the excuse request for ${req.members.full_name}…`)}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 hover:underline"
+                            className="flex items-center gap-1 text-xs hover:underline"
+                            style={{ color: "var(--status-success)" }}
                           >
                             <MessageSquare size={10} />
                             WhatsApp
@@ -184,20 +175,20 @@ export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
                     </div>
 
                     {req.reviewed_at && (
-                      <p className="text-xs text-slate-400 mt-1">
+                      <p className="text-xs mt-1" style={{ color: "var(--text-faint)" }}>
                         {req.status === "approved" ? "Approved" : "Rejected"} on {formatDate(req.reviewed_at)}
                       </p>
                     )}
                   </div>
                 </div>
 
-                {/* Action buttons — only for pending */}
                 {isPending && (
-                  <div className="flex gap-2 pt-1 border-t border-[#bbf7d0] dark:border-[#1a3a24]">
+                  <div className="flex gap-2 pt-1 border-t" style={{ borderColor: "var(--border)" }}>
                     <button
                       onClick={() => handleAction(req.id, "reject")}
                       disabled={isActing}
-                      className="btn-secondary text-xs py-1.5 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800/40 hover:bg-red-50 dark:hover:bg-red-950/20"
+                      className="btn-secondary text-xs py-1.5"
+                      style={{ color: "var(--status-danger)", borderColor: "var(--status-danger)" }}
                     >
                       {isActing ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
                       Reject
@@ -205,7 +196,7 @@ export function ExcusesClient({ requests: initial, orgId, slug }: Props) {
                     <button
                       onClick={() => handleAction(req.id, "approve")}
                       disabled={isActing}
-                      className="btn-primary text-xs py-1.5 bg-green-600 hover:bg-green-700 flex-1 justify-center"
+                      className="btn-primary text-xs py-1.5 flex-1 justify-center"
                     >
                       {isActing ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
                       Approve &amp; Mark Excused

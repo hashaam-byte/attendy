@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     template: "%s | Attendy Edu",
   },
   description: "QR-powered attendance tracking for Nigerian schools. Real-time gate scanning, instant parent SMS, and comprehensive reports.",
-  icons: { icon: "/favicon.svg" },
+  icons: { icon: "/favicon.png" },
 };
 
 export const viewport: Viewport = {
