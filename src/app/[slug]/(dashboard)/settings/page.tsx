@@ -108,11 +108,21 @@ export default async function SettingsPage({
     assignmentMap.set(a.org_user_id, list);
   });
 
-  // Enrich staff with their email (fetched from auth.users via RPC)
-  // and their current class assignments
+  // Fetch user emails from auth metadata
+  const userIds = (staffRows ?? []).map((s) => s.user_id);
+  const emailMap = new Map<string, string | null>();
+  
+  if (userIds.length > 0) {
+    const { data: { users: authUsers } } = await supabase.auth.admin.listUsers();
+    (authUsers ?? []).forEach((u) => {
+      emailMap.set(u.id, u.email ?? null);
+    });
+  }
+
+  // Enrich staff with their email and current class assignments
   const enrichedStaff = (staffRows ?? []).map((s) => ({
     ...s,
-    email: null as string | null,  // emails fetched client-side or via the existing API
+    email: emailMap.get(s.user_id) ?? null,
     assignments: assignmentMap.get(s.id) ?? [],
   }));
 
