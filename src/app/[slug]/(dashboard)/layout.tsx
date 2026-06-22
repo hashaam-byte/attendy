@@ -11,9 +11,11 @@ import { OrgProvider } from "@/context/org-context";
 export default async function SlugDashboardLayout({
   children,
   params,
+  searchParams,
 }: {
   children: React.ReactNode;
   params: Promise<{ slug: string }>;
+  searchParams?: Record<string, string | string[] | undefined>;
 }) {
   const { slug } = await params;
   const supabase = await createClient();
@@ -60,9 +62,11 @@ export default async function SlugDashboardLayout({
     redirect(`/suspended?slug=${slug}`);
   }
 
-  // 6. Gatemen → scanner directly
+  // 6. Gatemen → scanner directly (avoid infinite loop by using a query flag)
   if (orgUser.role === "gateman") {
-    redirect(`/${slug}/scanner`);
+    if (!searchParams?._gateman) {
+      redirect(`/${slug}/scanner?_gateman=1`);
+    }
   }
 
   const primaryColor = org?.primary_color || "#16a34a";
