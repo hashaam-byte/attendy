@@ -35,8 +35,8 @@ async function sendTermii(
   const baseUrl   = process.env.TERMII_BASE_URL  ?? "https://v3.api.termii.com";
 
   if (!apiKey) {
-    console.log(`[NOTIFY DEV] channel=${channel} to=${to} | ${message}`);
-    return { ok: true, messageId: "dev-mode" };
+    console.warn(`[NOTIFY] TERMII_API_KEY is not set. Message NOT sent. channel=${channel} to=${to} | ${message}`);
+    return { ok: false, error: "TERMII_API_KEY not configured — message not sent" };
   }
 
   const endpoint = channel === "whatsapp"

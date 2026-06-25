@@ -20,8 +20,8 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
   const senderId = process.env.TERMII_SENDER_ID ?? "Attendy";
 
   if (!apiKey) {
-    console.log(`[SMS DEV] To: ${to} | Message: ${message}`);
-    return { ok: true, messageId: "dev-mode" };
+    console.warn(`[SMS] TERMII_API_KEY is not set. Message NOT sent. To: ${to} | Message: ${message}`);
+    return { ok: false, error: "TERMII_API_KEY not configured — message not sent" };
   }
 
   const phone = normalisePhone(to);
