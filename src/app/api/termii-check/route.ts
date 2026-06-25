@@ -68,8 +68,13 @@ export async function GET(req: NextRequest) {
     const text = await res.text();
     let data: any = {};
     try { data = JSON.parse(text); } catch {}
-    if (res.ok && !data?.code) {
-      senderIds = (data?.data ?? []).map((s: any) => s?.sender_id ?? "");
+    if (res.ok && (data?.content || data?.data)) {
+      // Termii v3 API returns { content: [...] } — older docs showed { data: [...] }
+      // We support both shapes. Only count sender IDs that are "active" (not pending/blocked).
+      const list: any[] = data?.content ?? data?.data ?? [];
+      senderIds = list
+        .filter((s: any) => !s?.status || s?.status === "active")
+        .map((s: any) => s?.sender_id ?? "");
     } else {
       senderIdError = `HTTP ${res.status}: ${data?.message ?? text.slice(0, 80)}`;
     }

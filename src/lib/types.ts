@@ -1,5 +1,24 @@
-export type MemberRole = "admin" | "teacher" | "gateman" | "viewer";
-export type MemberType = "student" | "staff" | "employee" | "contractor" | "guest" | "visitor";
+// src/lib/types.ts — Attendy Web
+
+// Roles that exist in the DB.  Keep in sync with attendy-mobile/src/lib/types.ts.
+export type MemberRole =
+  | "admin"
+  | "teacher"
+  | "gateman"
+  | "scanner"
+  | "hr"
+  | "receptionist"
+  | "steward"
+  | "viewer";
+
+export type MemberType =
+  | "student"
+  | "staff"
+  | "employee"
+  | "contractor"
+  | "guest"
+  | "visitor";
+
 export type AttendanceStatus = "present" | "late" | "early_exit" | "excused";
 export type PlanType = "trial" | "basic" | "standard" | "premium" | "enterprise";
 export type NotificationStatus = "sent" | "delivered" | "failed" | "pending";
@@ -80,13 +99,16 @@ export interface NotificationLog {
   sent_at: string;
 }
 
+// ── School settings ───────────────────────────────────────────────────────────
+// Field names here MUST match what the settings page saves to the DB and what
+// org-context.tsx reads.  Canonical key: `grace_period_minutes`, `absence_alert_time`.
 export interface SchoolSettings {
-  start_time: string;       // e.g. "07:30"
-  grace_period: number;     // minutes
-  school_days: number[];    // [1,2,3,4,5]
+  start_time: string;            // e.g. "07:30"
+  grace_period_minutes: number;  // minutes
+  school_days: number[];         // [1,2,3,4,5]
   sms_on_arrival: boolean;
   sms_on_absence: boolean;
-  absence_sms_time: string; // e.g. "09:00"
+  absence_alert_time: string;    // e.g. "09:00"  (was wrongly named absence_sms_time)
   welfare_consecutive_days: number;
   arrival_sms_template: string;
   absence_sms_template: string;
@@ -103,13 +125,15 @@ export const PLAN_LIMITS: Record<PlanType, { members: number; sms: number }> = {
 
 export const DEFAULT_SETTINGS: SchoolSettings = {
   start_time: "07:30",
-  grace_period: 15,
+  grace_period_minutes: 15,
   school_days: [1, 2, 3, 4, 5],
   sms_on_arrival: true,
   sms_on_absence: true,
-  absence_sms_time: "09:00",
+  absence_alert_time: "09:00",
   welfare_consecutive_days: 3,
-  arrival_sms_template: "Hello {parent_name}, your child {student_name} arrived at {school_name} at {time}.",
-  absence_sms_template: "Hello {parent_name}, your child {student_name} has not been scanned at {school_name} today. Please contact the school.",
+  arrival_sms_template:
+    "Hello {parent_name}, your child {student_name} arrived at {school_name} at {time}.",
+  absence_sms_template:
+    "Hello {parent_name}, your child {student_name} has not been scanned at {school_name} today. Please contact the school.",
   whatsapp_enabled: false,
 };
