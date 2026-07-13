@@ -98,6 +98,21 @@ export default function ExcuseSubmissionPage() {
           : "Failed to submit. Please try again."
       );
     } else {
+      // Push admins to let them know a new excuse came in — fire and forget
+      fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-push`, {
+        method:  "POST",
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          type:   "excuse_request",
+          org_id: selected.organisation_id,
+          title:  "New Excuse Request",
+          body:   `${selected.full_name}'s parent submitted an excuse request for review.`,
+          target: "admins",
+        }),
+      }).catch(() => {});
       setSubmitted(true);
     }
     setLoading(false);

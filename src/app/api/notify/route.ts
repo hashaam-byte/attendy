@@ -85,6 +85,40 @@ export async function POST(req: NextRequest) {
     error_message:       result.ok ? null : result.error,
   });
 
+  // ── Send push notification to parent (alongside SMS) ──────────
+  // Push is fire-and-forget — never block the response on it.
+  const pushTitle = type === "arrival"
+    ? `${member.full_name} has arrived`
+    : type === "absence"
+    ? `${member.full_name} is absent today`
+    : `${org?.name ?? "School"} update`;
+
+  const pushBody = type === "arrival"
+    ? `${is_late ? "Late arrival" : "Arrived safely"} at ${org?.name ?? "school"}`
+    : type === "absence"
+    ? `${member.full_name} has not been scanned today`
+    : message;
+
+  fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-push`,
+    {
+      method:  "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({
+        type,
+        org_id,
+        title:     pushTitle,
+        body:      pushBody,
+        target:    "parent",
+        member_id,
+        data:      { is_late: is_late ?? false },
+      }),
+    }
+  ).catch((e) => console.warn("[PUSH] fire-and-forget failed:", e));
+
   return NextResponse.json({
     success: result.ok,
     channel: result.channel,

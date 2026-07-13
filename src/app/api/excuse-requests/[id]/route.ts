@@ -72,7 +72,7 @@ export async function PATCH(
       return NextResponse.json({ error: rpcErr.message }, { status: 500 });
     }
 
-    // ── Step 4: notify parent if they have a phone number ──────────────────
+    // ── Notify parent via SMS + Push ────────────────────────────
     if (member?.parent_phone) {
       const { data: org } = await adminSupabase
         .from("organisations")
@@ -110,9 +110,29 @@ export async function PATCH(
         provider_message_id: result.messageId ?? null,
         error_message:       result.ok ? null : result.error,
       });
+
+      // Push notification to parent
+      fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-push`,
+        {
+          method:  "POST",
+          headers: {
+            "Content-Type":  "application/json",
+            "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({
+            type:      "excuse_reviewed",
+            org_id:    orgUser.organisation_id,
+            title:     "Excuse Request Approved ✓",
+            body:      `${member.full_name}'s excuse for ${dateRange} has been approved.`,
+            target:    "parent",
+            member_id: excuse.member_id,
+          }),
+        }
+      ).catch(() => {});
     }
   } else {
-    // reject — direct update, no RPC needed
+    // reject
     const { error: rejectErr } = await adminSupabase
       .from("excuse_requests")
       .update({ status: "rejected", reviewed_at: new Date().toISOString() })
@@ -121,6 +141,28 @@ export async function PATCH(
     if (rejectErr) {
       console.error("[excuse PATCH] reject error:", rejectErr.message);
       return NextResponse.json({ error: rejectErr.message }, { status: 500 });
+    }
+
+    // Push parent on rejection too
+    if (member) {
+      fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-push`,
+        {
+          method:  "POST",
+          headers: {
+            "Content-Type":  "application/json",
+            "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({
+            type:      "excuse_reviewed",
+            org_id:    orgUser.organisation_id,
+            title:     "Excuse Request Update",
+            body:      `${member.full_name}'s excuse request has been reviewed. Please contact the school for details.`,
+            target:    "parent",
+            member_id: excuse.member_id,
+          }),
+        }
+      ).catch(() => {});
     }
   }
 
