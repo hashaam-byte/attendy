@@ -1,4 +1,3 @@
-
 import { createClient } from "@supabase/supabase-js";
 
 const getEnv = (name: string) => {
@@ -21,7 +20,9 @@ function normalisePhone(phone: string): string {
   return d;
 }
 
-// ── Send SMS via Termii ─────────────────────────────────────────
+// ── Send SMS via Termii (generic channel only) ──────────────────
+// Generic works for all Nigerian numbers without a registered sender ID.
+// DND channel is not used — requires NCC approval per network.
 async function sendSms(to: string, message: string): Promise<boolean> {
   if (!TERMII_KEY) {
     console.log(`[DEV] SMS to ${to}: ${message}`);
@@ -37,26 +38,13 @@ async function sendSms(to: string, message: string): Promise<boolean> {
         from:    TERMII_SENDER_ID,
         sms:     message.slice(0, 160),
         type:    "plain",
-        channel: "dnd",
+        channel: "generic",
       }),
     });
     const data = await res.json();
     if (data?.code === "error") {
-      // Retry with generic channel
-      const res2 = await fetch("https://v3.api.termii.com/api/sms/send", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          api_key: TERMII_KEY,
-          to,
-          from:    TERMII_SENDER_ID,
-          sms:     message.slice(0, 160),
-          type:    "plain",
-          channel: "generic",
-        }),
-      });
-      const data2 = await res2.json();
-      return data2?.code !== "error";
+      console.error("[SMS] Termii error:", data?.message);
+      return false;
     }
     return true;
   } catch (e) {
