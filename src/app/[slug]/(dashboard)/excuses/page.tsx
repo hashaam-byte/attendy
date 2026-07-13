@@ -27,30 +27,50 @@ export default async function ExcusesPage({
   if (!orgUser) redirect(`/${slug}/login`);
   if (orgUser.role !== "admin") redirect(`/${slug}/dashboard`);
 
-  const { data: requests, error: requestsError } = await supabase
+  const orgId = orgUser.organisation_id;
+
+  // ── Step 1: fetch excuse_requests with NO join (same as dashboard count) ──
+  // A relational join on members fails silently under RLS — Supabase drops
+  // rows where the join sub-query returns nothing, making the page look empty
+  // even though the dashboard count is correct.
+  const { data: rawRequests, error: requestsError } = await supabase
     .from("excuse_requests")
-    .select(`
-      id, created_at, start_date, end_date, reason, status,
-      reviewed_at, submitted_by,
-      members ( id, full_name, class_name, parent_phone )
-    `)
-    .eq("organisation_id", orgUser.organisation_id)
+    .select("id, created_at, start_date, end_date, reason, status, reviewed_at, submitted_by, member_id")
+    .eq("organisation_id", orgId)
     .order("created_at", { ascending: false });
 
-  // Surface RLS / query errors in Vercel logs — this is the most common
-  // cause of the dashboard showing a pending count but the page showing
-  // nothing. Check logs at vercel.com → your project → Logs.
   if (requestsError) {
     console.error("[excuses page] fetch error:", requestsError.message, "code:", requestsError.code);
   }
 
+  // ── Step 2: fetch member details separately using admin's authenticated context ──
+  // This mirrors how the dashboard fetches students — a flat .select() with
+  // no cross-table join, which is never affected by members RLS.
+  const memberIds = [...new Set((rawRequests ?? []).map((r) => r.member_id).filter(Boolean))];
+
+  let memberMap: Record<string, { id: string; full_name: string; class_name: string | null; parent_phone: string | null }> = {};
+
+  if (memberIds.length > 0) {
+    const { data: members } = await supabase
+      .from("members")
+      .select("id, full_name, class_name, parent_phone")
+      .in("id", memberIds);
+
+    for (const m of members ?? []) {
+      memberMap[m.id] = m;
+    }
+  }
+
+  // ── Step 3: stitch them together in JS ────────────────────────────────────
+  const requests = (rawRequests ?? []).map((r) => ({
+    ...r,
+    members: memberMap[r.member_id] ?? null,
+  }));
+
   return (
     <ExcusesClient
-      requests={(requests ?? []).map((r: any) => ({
-        ...r,
-        members: Array.isArray(r.members) ? r.members[0] ?? null : r.members,
-      }))}
-      orgId={orgUser.organisation_id}
+      requests={requests}
+      orgId={orgId}
       slug={slug}
     />
   );
