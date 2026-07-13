@@ -161,7 +161,10 @@ function AddStaffModal({ orgId, orgSlug, onClose, onAdded }: {
     setLoading(false);
     if (!res.ok) { setError(data.error ?? "Failed to create user."); return; }
     setResult({ email: email.trim().toLowerCase(), password: defaultPassword, smsSent: data.sms_sent ?? false });
-    onAdded({ id: `temp-${Date.now()}`, user_id: data.user.id, email: email.trim().toLowerCase(), role, is_active: true, created_at: new Date().toISOString() });
+    // Use data.user.id as the row id — it's the real auth user id and unique.
+    // This prevents edit/delete from sending a fake "temp-xxx" id to the API
+    // before the page refreshes with the real org_users row id.
+    onAdded({ id: data.user.id, user_id: data.user.id, email: email.trim().toLowerCase(), role, is_active: true, created_at: new Date().toISOString() });
   }
 
   function copyCredentials() {
@@ -524,6 +527,28 @@ export function SettingsClient({ org, staff: initialStaff, classes, currentUserI
             onChange={(e) => setSettings(s => ({ ...s, absence_alert_time: e.target.value }))} />
           <p className="text-xs mt-1" style={{ color: "var(--text-faint)" }}>
             If a student hasn't scanned by this time, an absence SMS fires to their parent.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
+            Welfare Alert — Consecutive Absences
+          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="number" min={1} max={30}
+              className="input-base"
+              style={{ maxWidth: 80 }}
+              value={settings.welfare_alert_days}
+              onChange={(e) => setSettings(s => ({
+                ...s,
+                welfare_alert_days: Math.max(1, Math.min(30, Number(e.target.value) || 3)),
+              }))}
+            />
+            <span className="text-xs" style={{ color: "var(--text-faint)" }}>days</span>
+          </div>
+          <p className="text-xs mt-1" style={{ color: "var(--text-faint)" }}>
+            Trigger a welfare alert to parents after this many consecutive unexcused absences. Default is 3.
           </p>
         </div>
 

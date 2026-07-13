@@ -352,8 +352,24 @@ export default function ParentPortalPage() {
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+
+    // Rate limit: max 5 attempts per 60 seconds
+    const now = Date.now();
+    const WINDOW = 60_000;
+    const MAX = 5;
+    let attempts: number[] = [];
+    try { attempts = JSON.parse(sessionStorage.getItem("portal_attempts") ?? "[]"); } catch { attempts = []; }
+    attempts = attempts.filter((t) => now - t < WINDOW);
+    if (attempts.length >= MAX) {
+      const wait = Math.ceil((WINDOW - (now - Math.min(...attempts))) / 1000);
+      setError(`Too many attempts. Please wait ${wait}s and try again.`);
+      return;
+    }
+    attempts.push(now);
+    sessionStorage.setItem("portal_attempts", JSON.stringify(attempts));
+
+    setLoading(true);
 
     const cleaned = phone.replace(/\D/g, "");
     if (cleaned.length < 10) {
@@ -379,8 +395,13 @@ export default function ParentPortalPage() {
       return;
     }
 
-    sessionStorage.setItem("parent_students", JSON.stringify(students));
-    sessionStorage.setItem("parent_phone", phone);
+    // Store with a 30-minute TTL — prevents shared devices from leaking
+    // one parent's data to the next person who opens the browser.
+    sessionStorage.setItem("parent_session", JSON.stringify({
+      students,
+      phone,
+      expiresAt: Date.now() + 30 * 60 * 1000,
+    }));
     router.push("/portal/dashboard");
   }
 

@@ -144,13 +144,37 @@ export default function ParentDashboardPage() {
 
   // ── Load session data ────────────────────────────────────────
   useEffect(() => {
-    const stored = sessionStorage.getItem("parent_students");
-    if (!stored) { router.push("/portal"); return; }
+    // Try new TTL-aware key first, fall back to legacy key for users
+    // who logged in before this deploy.
+    const newStored  = sessionStorage.getItem("parent_session");
+    const legacyStored = sessionStorage.getItem("parent_students");
+
+    if (!newStored && !legacyStored) { router.push("/portal"); return; }
+
     try {
-      const parsed: Student[] = JSON.parse(stored);
-      if (!parsed.length) { router.push("/portal"); return; }
-      setStudents(parsed);
+      if (newStored) {
+        const parsed = JSON.parse(newStored) as { students: Student[]; phone: string; expiresAt: number };
+        if (!parsed.students?.length || Date.now() > parsed.expiresAt) {
+          sessionStorage.removeItem("parent_session");
+          router.push("/portal");
+          return;
+        }
+        setStudents(parsed.students);
+      } else if (legacyStored) {
+        // Migrate legacy session into the new TTL format
+        const parsed: Student[] = JSON.parse(legacyStored);
+        if (!parsed.length) { router.push("/portal"); return; }
+        setStudents(parsed);
+        sessionStorage.setItem("parent_session", JSON.stringify({
+          students: parsed,
+          phone: sessionStorage.getItem("parent_phone") ?? "",
+          expiresAt: Date.now() + 30 * 60 * 1000,
+        }));
+        sessionStorage.removeItem("parent_students");
+        sessionStorage.removeItem("parent_phone");
+      }
     } catch {
+      sessionStorage.removeItem("parent_session");
       router.push("/portal");
     }
     setTimeout(() => setMounted(true), 80);
@@ -208,8 +232,9 @@ export default function ParentDashboardPage() {
   }, [selected?.id]);
 
   function handleLogout() {
-    sessionStorage.removeItem("parent_students");
-    sessionStorage.removeItem("parent_phone");
+    sessionStorage.removeItem("parent_session");
+    sessionStorage.removeItem("parent_students"); // legacy cleanup
+    sessionStorage.removeItem("parent_phone");    // legacy cleanup
     router.push("/portal");
   }
 

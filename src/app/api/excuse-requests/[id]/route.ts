@@ -78,8 +78,9 @@ export async function PATCH(
         `(${dateRange}) has been approved. Attendance marked as excused.`;
 
       const settings = (org?.settings as any) ?? {};
-      const useWhatsApp = org?.whatsapp_enabled === true
-        && settings.whatsapp_notifications === true
+      // Check both the legacy org-level flag AND the settings JSONB key —
+      // schools that saved before the type fix only have one of them set.
+      const useWhatsApp = (org?.whatsapp_enabled === true || settings.whatsapp_notifications === true)
         && hasFeature(org?.plan, "whatsappNotifications");
 
       const result = await sendNotification({
