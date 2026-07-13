@@ -37,10 +37,29 @@ export default function ExcuseSubmissionPage() {
   const [error,     setError]     = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("parent_students");
-    if (!stored) { router.push("/portal"); return; }
+    // Read the TTL-aware session key (set by portal/page.tsx after our fix).
+    // Fall back to the legacy "parent_students" key for users who logged in
+    // before the deploy so they don't get kicked out mid-session.
+    const newStored    = sessionStorage.getItem("parent_session");
+    const legacyStored = sessionStorage.getItem("parent_students");
+
+    if (!newStored && !legacyStored) { router.push("/portal"); return; }
+
     try {
-      const parsed: Student[] = JSON.parse(stored);
+      let parsed: Student[] = [];
+
+      if (newStored) {
+        const session = JSON.parse(newStored) as { students: Student[]; expiresAt: number };
+        if (!session.students?.length || Date.now() > session.expiresAt) {
+          sessionStorage.removeItem("parent_session");
+          router.push("/portal");
+          return;
+        }
+        parsed = session.students;
+      } else if (legacyStored) {
+        parsed = JSON.parse(legacyStored);
+      }
+
       if (!parsed.length) { router.push("/portal"); return; }
       setStudents(parsed);
       setSelectedId(parsed[0].id);
