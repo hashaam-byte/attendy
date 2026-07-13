@@ -27,7 +27,7 @@ export default async function ExcusesPage({
   if (!orgUser) redirect(`/${slug}/login`);
   if (orgUser.role !== "admin") redirect(`/${slug}/dashboard`);
 
-  const { data: requests } = await supabase
+  const { data: requests, error: requestsError } = await supabase
     .from("excuse_requests")
     .select(`
       id, created_at, start_date, end_date, reason, status,
@@ -36,6 +36,13 @@ export default async function ExcusesPage({
     `)
     .eq("organisation_id", orgUser.organisation_id)
     .order("created_at", { ascending: false });
+
+  // Surface RLS / query errors in Vercel logs — this is the most common
+  // cause of the dashboard showing a pending count but the page showing
+  // nothing. Check logs at vercel.com → your project → Logs.
+  if (requestsError) {
+    console.error("[excuses page] fetch error:", requestsError.message, "code:", requestsError.code);
+  }
 
   return (
     <ExcusesClient

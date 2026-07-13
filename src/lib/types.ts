@@ -109,10 +109,10 @@ export interface SchoolSettings {
   sms_on_arrival: boolean;
   sms_on_absence: boolean;
   absence_alert_time: string;    // e.g. "09:00"  (was wrongly named absence_sms_time)
-  welfare_consecutive_days: number;
+  welfare_alert_days: number;
   arrival_sms_template: string;
   absence_sms_template: string;
-  whatsapp_enabled: boolean;
+  whatsapp_notifications: boolean;
 }
 
 export const PLAN_LIMITS: Record<PlanType, { members: number; sms: number }> = {
@@ -130,10 +130,10 @@ export const DEFAULT_SETTINGS: SchoolSettings = {
   sms_on_arrival: true,
   sms_on_absence: true,
   absence_alert_time: "09:00",
-  welfare_consecutive_days: 3,
+  welfare_alert_days: 3,
   arrival_sms_template:
     "Hello {parent_name}, your child {student_name} arrived at {school_name} at {time}.",
   absence_sms_template:
     "Hello {parent_name}, your child {student_name} has not been scanned at {school_name} today. Please contact the school.",
-  whatsapp_enabled: false,
+  whatsapp_notifications: false,
 };
