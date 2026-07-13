@@ -36,31 +36,43 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
 
-  const { data: excuse } = await adminSupabase
+  // ── Step 1: fetch excuse with NO join (same fix as the list page) ──────────
+  // A relational join on members can return null even with the service role
+  // if PostgREST can't resolve the FK, causing a false 404 that blocks
+  // approve/reject silently.
+  const { data: excuse, error: excuseErr } = await adminSupabase
     .from("excuse_requests")
-    .select(`
-      id, reason, start_date, end_date, status,
-      member_id,
-      members ( full_name, parent_phone, class_name )
-    `)
+    .select("id, reason, start_date, end_date, status, member_id")
     .eq("id", id)
     .eq("organisation_id", orgUser.organisation_id)
     .single();
 
-  if (!excuse) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (excuseErr || !excuse) {
+    console.error("[excuse PATCH] not found:", excuseErr?.message);
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   if (excuse.status !== "pending") {
     return NextResponse.json({ error: "Already reviewed" }, { status: 409 });
   }
 
+  // ── Step 2: fetch member separately ────────────────────────────────────────
+  const { data: member } = await adminSupabase
+    .from("members")
+    .select("id, full_name, parent_phone, class_name")
+    .eq("id", excuse.member_id)
+    .single();
+
+  // ── Step 3: approve or reject ───────────────────────────────────────────────
   if (action === "approve") {
     const { error: rpcErr } = await adminSupabase.rpc("approve_excuse_request", {
       excuse_id: id,
     });
     if (rpcErr) {
+      console.error("[excuse PATCH] RPC error:", rpcErr.message);
       return NextResponse.json({ error: rpcErr.message }, { status: 500 });
     }
 
-    const member = Array.isArray(excuse.members) ? excuse.members[0] : excuse.members;
+    // ── Step 4: notify parent if they have a phone number ──────────────────
     if (member?.parent_phone) {
       const { data: org } = await adminSupabase
         .from("organisations")
@@ -78,8 +90,6 @@ export async function PATCH(
         `(${dateRange}) has been approved. Attendance marked as excused.`;
 
       const settings = (org?.settings as any) ?? {};
-      // Check both the legacy org-level flag AND the settings JSONB key —
-      // schools that saved before the type fix only have one of them set.
       const useWhatsApp = (org?.whatsapp_enabled === true || settings.whatsapp_notifications === true)
         && hasFeature(org?.plan, "whatsappNotifications");
 
@@ -91,21 +101,27 @@ export async function PATCH(
       });
 
       await adminSupabase.from("notifications_log").insert({
-        organisation_id: orgUser.organisation_id,
-        member_id:       excuse.member_id,
-        channel:         result.channel,
-        recipient:       member.parent_phone,
+        organisation_id:     orgUser.organisation_id,
+        member_id:           excuse.member_id,
+        channel:             result.channel,
+        recipient:           member.parent_phone,
         message,
-        status:          result.ok ? "sent" : "failed",
+        status:              result.ok ? "sent" : "failed",
         provider_message_id: result.messageId ?? null,
-        error_message:   result.ok ? null : result.error,
+        error_message:       result.ok ? null : result.error,
       });
     }
   } else {
-    await adminSupabase
+    // reject — direct update, no RPC needed
+    const { error: rejectErr } = await adminSupabase
       .from("excuse_requests")
       .update({ status: "rejected", reviewed_at: new Date().toISOString() })
       .eq("id", id);
+
+    if (rejectErr) {
+      console.error("[excuse PATCH] reject error:", rejectErr.message);
+      return NextResponse.json({ error: rejectErr.message }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ ok: true, action });
