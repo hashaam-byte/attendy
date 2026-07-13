@@ -85,36 +85,30 @@ export async function GET(req: NextRequest) {
   const senderIdRegistered = senderIds.includes(senderId);
 
   // ── 3. Diagnose ───────────────────────────────────────────────
+  // NOTE: We use the 'generic' channel which does NOT require a registered
+  // sender ID — so sender ID warnings are informational only, not blockers.
   type Issue =
     | "LOW_BALANCE"
-    | "SENDER_ID_UNREGISTERED"
     | "BALANCE_CHECK_FAILED"
     | "OK"
     | "API_ERROR";
 
   let issue: Issue = "OK";
-  let message = "Termii configuration looks good. SMS should be working.";
-  const tips: string[] = [];
+  let message = "Termii is configured correctly. SMS (generic channel) is ready to send.";
+  const tips: string[] = [
+    "Using generic channel — works 24/7 for all Nigerian numbers, 8 AM – 9 PM WAT is the recommended window.",
+    "Sender ID registration is not required for generic channel.",
+  ];
 
   if (balanceError) {
     issue = "API_ERROR";
     message = `Could not connect to Termii: ${balanceError}`;
-    tips.push("Check your TERMII_API_KEY is correct (no extra spaces).");
-    tips.push("The Termii API base URL in use is: " + baseUrl);
+    tips.unshift("Check your TERMII_API_KEY is correct (no extra spaces).");
+    tips.unshift("The Termii API base URL in use is: " + baseUrl);
   } else if (balance !== null && balance < 5) {
     issue = "LOW_BALANCE";
-    message = `Your Termii balance is ₦${balance}. DND-route SMS costs ~₦3–4 per message. You need at least ₦5 to send one SMS.`;
-    tips.push("Top up at https://termii.com to send more SMS.");
-    tips.push("With ₦5, you may only get 1–2 messages before balance runs out.");
-  }
-
-  if (!senderIdRegistered && !senderIdError) {
-    if (issue === "OK") issue = "SENDER_ID_UNREGISTERED";
-    message = `Sender ID "${senderId}" is not registered in your Termii account. ` +
-      `Registered IDs: [${senderIds.join(", ") || "none found"}]. ` +
-      `SMS will fail until you register this sender ID.`;
-    tips.push(`Register "${senderId}" as a sender ID at https://termii.com/sender-ids`);
-    tips.push(`Or change TERMII_SENDER_ID to one of your registered IDs: ${senderIds.join(", ") || "(none yet)"}`);
+    message = `Your Termii balance is ₦${balance}. Generic SMS costs ~₦2–3 per message. Top up to send more.`;
+    tips.unshift("Top up at https://termii.com to restore SMS sending.");
   }
 
   return NextResponse.json({
@@ -123,10 +117,10 @@ export async function GET(req: NextRequest) {
     message,
     balance,
     balance_error: balanceError,
+    channel: "generic",
     sender_id: senderId,
-    sender_id_registered: senderIdRegistered,
+    sender_id_note: "Generic channel does not require a registered sender ID.",
     registered_sender_ids: senderIds,
-    sender_id_error: senderIdError,
     tips,
     api_key_set: true,
     api_key_prefix: apiKey.slice(0, 8) + "…",
@@ -175,7 +169,7 @@ export async function POST(req: NextRequest) {
         from:    senderId,
         sms:     message,
         type:    "plain",
-        channel: "dnd",
+        channel: "generic",   // generic works 24/7, no registered sender ID needed
       }),
     });
     const text = await res.text();

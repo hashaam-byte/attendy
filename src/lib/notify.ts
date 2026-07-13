@@ -105,12 +105,10 @@ export async function sendNotification(opts: NotifyOptions): Promise<NotifyResul
     console.warn(`[NOTIFY] WhatsApp failed for ${phone}, falling back to SMS. Error: ${waResult.error}`);
   }
 
-  // SMS fallback — try DND first, then generic
-  const dndResult = await sendTermii(phone, opts.message, "dnd");
-  if (dndResult.ok) {
-    return { ok: true, channel: "sms", messageId: dndResult.messageId };
-  }
-
+  // Generic channel works 24/7 for all Nigerian numbers without needing
+  // a registered sender ID. DND channel is disabled — it requires an
+  // approved sender ID which is not currently active.
+  // When DND sender ID is approved in future, restore the DND attempt here.
   const genericResult = await sendTermii(phone, opts.message, "generic");
   return {
     ok:        genericResult.ok,

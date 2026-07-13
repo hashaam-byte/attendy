@@ -75,13 +75,10 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
     return { ok: true, messageId: data?.message_id };
   }
 
-  // Try DND first (registered sender IDs bypass DND), fall back to generic
-  const result = await attempt("dnd");
-  if (!result.ok) {
-    console.warn(`[SMS] DND channel failed, trying generic…`);
-    return await attempt("generic");
-  }
-  return result;
+  // Generic channel works 24/7 for all Nigerian numbers without needing
+  // a registered sender ID. DND channel is disabled — it requires an
+  // approved sender ID which is not currently active.
+  return await attempt("generic");
 }
 
 export function buildArrivalSms(opts: {
