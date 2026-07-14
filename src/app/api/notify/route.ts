@@ -1,128 +1,117 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { sendNotification } from "@/lib/notify";
-import { buildArrivalSms, buildAbsenceSms } from "@/lib/sms";
-import { hasFeature } from "@/lib/plan-features";
+// src/lib/notify.ts — ATTENDY-EDU v4
+// Unified notification sender.
+// When org.whatsapp_enabled = true → tries Termii WhatsApp channel first.
+// Falls back to SMS if WhatsApp fails or is unavailable.
+// Code is built now; activates automatically when Termii approves WhatsApp.
 
-const serviceSupabase = createServiceClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export interface NotifyOptions {
+  to:        string;   // phone number
+  message:   string;
+  orgId:     string;
+  useWhatsApp?: boolean;  // from org.whatsapp_enabled
+}
 
-export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { type, member_id, org_id, is_late, late_reason } = body;
+export interface NotifyResult {
+  ok:        boolean;
+  channel:   "whatsapp" | "sms";
+  messageId?: string;
+  error?:    string;
+}
 
-  if (!member_id || !org_id) {
-    return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+function normalisePhone(phone: string): string {
+  const d = phone.replace(/\D/g, "");
+  if (d.startsWith("234")) return d;
+  if (d.startsWith("0") && d.length === 11) return "234" + d.slice(1);
+  return d;
+}
+
+async function sendTermii(
+  to:      string,
+  message: string,
+  channel: "generic" | "dnd" | "whatsapp"
+): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+  const apiKey    = process.env.TERMII_API_KEY;
+  const senderId  = process.env.TERMII_SENDER_ID ?? "Attendy";
+  const baseUrl   = process.env.TERMII_BASE_URL  ?? "https://v3.api.termii.com";
+
+  if (!apiKey) {
+    console.warn(`[NOTIFY] TERMII_API_KEY is not set. Message NOT sent. channel=${channel} to=${to} | ${message}`);
+    return { ok: false, error: "TERMII_API_KEY not configured — message not sent" };
   }
 
-  const [{ data: member }, { data: org }] = await Promise.all([
-    serviceSupabase
-      .from("members")
-      .select("full_name, parent_phone, class_name")
-      .eq("id", member_id)
-      .single(),
-    serviceSupabase
-      .from("organisations")
-      .select("name, sms_sender_id, whatsapp_enabled, settings, plan")
-      .eq("id", org_id)
-      .single(),
-  ]);
+  const endpoint = channel === "whatsapp"
+    ? `${baseUrl}/api/sms/otp/send/whatsapp`  // Termii WhatsApp endpoint
+    : `${baseUrl}/api/sms/send`;
 
-  if (!member?.parent_phone) {
-    return NextResponse.json({ skipped: true, reason: "no_phone" });
-  }
+  const body = channel === "whatsapp"
+    ? {
+        api_key:   apiKey,
+        to,
+        from:      senderId,
+        sms:       message.slice(0, 1000),
+        type:      "plain",
+        channel:   "whatsapp",
+      }
+    : {
+        api_key:   apiKey,
+        to,
+        from:      senderId,
+        sms:       message.slice(0, 160),
+        type:      "plain",
+        channel,
+      };
 
-  const settings = (org?.settings as any) ?? {};
+  let res: Response;
+  let rawText: string;
 
-  // Plan-gate check: only allow WhatsApp routing if BOTH the org enabled
-  // it in settings AND their current plan actually includes the feature
-  // AND Termii has approved their WhatsApp sender (whatsapp_enabled).
-  const planQualifies = hasFeature(org?.plan, "whatsappNotifications");
-  const useWhatsApp = org?.whatsapp_enabled === true
-    && settings.whatsapp_notifications === true
-    && planQualifies;
-
-  const time = new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" });
-
-  let message = "";
-  if (type === "arrival") {
-    message = buildArrivalSms({
-      parentName:  "Parent",
-      studentName: member.full_name,
-      schoolName:  org?.name ?? "School",
-      time,
-      isLate:      is_late ?? false,
-    });
-  } else if (type === "absence") {
-    message = buildAbsenceSms({
-      parentName:  "Parent",
-      studentName: member.full_name,
-      schoolName:  org?.name ?? "School",
-    });
-  } else if (type === "registration") {
-    message = `${org?.name ?? "School"}: ${member.full_name} has been registered. Their QR card is ready.`;
-  } else {
-    return NextResponse.json({ error: "Unknown type" }, { status: 400 });
-  }
-
-  const result = await sendNotification({
-    to:          member.parent_phone,
-    message,
-    orgId:       org_id,
-    useWhatsApp,
-  });
-
-  await serviceSupabase.from("notifications_log").insert({
-    organisation_id:     org_id,
-    member_id,
-    channel:             result.channel,
-    recipient:           member.parent_phone,
-    message,
-    status:              result.ok ? "sent" : "failed",
-    provider_message_id: result.messageId ?? null,
-    error_message:       result.ok ? null : result.error,
-  });
-
-  // ── Send push notification to parent (alongside SMS) ──────────
-  // Push is fire-and-forget — never block the response on it.
-  const pushTitle = type === "arrival"
-    ? `${member.full_name} has arrived`
-    : type === "absence"
-    ? `${member.full_name} is absent today`
-    : `${org?.name ?? "School"} update`;
-
-  const pushBody = type === "arrival"
-    ? `${is_late ? "Late arrival" : "Arrived safely"} at ${org?.name ?? "school"}`
-    : type === "absence"
-    ? `${member.full_name} has not been scanned today`
-    : message;
-
-  fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-push`,
-    {
+  try {
+    res     = await fetch(endpoint, {
       method:  "POST",
-      headers: {
-        "Content-Type":  "application/json",
-        "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-      body: JSON.stringify({
-        type,
-        org_id,
-        title:     pushTitle,
-        body:      pushBody,
-        target:    "parent",
-        member_id,
-        data:      { is_late: is_late ?? false },
-      }),
-    }
-  ).catch((e) => console.warn("[PUSH] fire-and-forget failed:", e));
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(body),
+    });
+    rawText = await res.text();
+  } catch (networkErr: any) {
+    return { ok: false, error: `Network error: ${networkErr.message}` };
+  }
 
-  return NextResponse.json({
-    success: result.ok,
-    channel: result.channel,
-    error: result.error,
-    whatsapp_plan_blocked: !planQualifies && settings.whatsapp_notifications === true,
-  });
+  let data: any;
+  try { data = JSON.parse(rawText); } catch { data = {}; }
+
+  if (!res.ok || data?.code === "error") {
+    const errMsg = [
+      `Termii ${channel} error`,
+      `HTTP ${res.status}`,
+      data?.message ? `"${data.message}"` : null,
+    ].filter(Boolean).join(" | ");
+    console.error(`[NOTIFY ERROR] to=${to} channel=${channel} | ${errMsg}`);
+    return { ok: false, error: errMsg };
+  }
+
+  console.log(`[NOTIFY OK] to=${to} channel=${channel} messageId=${data?.message_id}`);
+  return { ok: true, messageId: data?.message_id };
+}
+
+export async function sendNotification(opts: NotifyOptions): Promise<NotifyResult> {
+  const phone = normalisePhone(opts.to);
+
+  // Try WhatsApp first if org has it enabled
+  if (opts.useWhatsApp) {
+    const waResult = await sendTermii(phone, opts.message, "whatsapp");
+    if (waResult.ok) {
+      return { ok: true, channel: "whatsapp", messageId: waResult.messageId };
+    }
+    // WhatsApp failed → fall through to SMS
+    console.warn(`[NOTIFY] WhatsApp failed for ${phone}, falling back to SMS. Error: ${waResult.error}`);
+  }
+
+  // Generic channel only — DND requires NCC network approval per carrier
+  // which is not yet active. Generic works 24/7 for all Nigerian numbers.
+  const genericResult = await sendTermii(phone, opts.message, "generic");
+  return {
+    ok:        genericResult.ok,
+    channel:   "sms",
+    messageId: genericResult.messageId,
+    error:     genericResult.ok ? undefined : genericResult.error,
+  };
 }

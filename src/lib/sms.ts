@@ -26,7 +26,7 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
 
   const phone = normalisePhone(to);
 
-  async function attempt(channel: "dnd" | "generic"): Promise<SmsResult> {
+  async function attempt(channel: "generic"): Promise<SmsResult> {
     let res: Response;
     let rawText: string;
 
@@ -75,9 +75,8 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
     return { ok: true, messageId: data?.message_id };
   }
 
-  // Generic channel works 24/7 for all Nigerian numbers without needing
-  // a registered sender ID. DND channel is disabled — it requires an
-  // approved sender ID which is not currently active.
+  // Generic channel only — DND requires NCC network approval per carrier
+  // which is not yet active. Generic works 24/7 for all Nigerian numbers.
   return await attempt("generic");
 }
 
