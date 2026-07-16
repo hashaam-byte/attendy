@@ -5,7 +5,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, CheckCircle, XCircle, Trash2, MessageSquare, X } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import { cn, formatDateTime } from "@/lib/utils";
 
 type Log = {
@@ -25,29 +24,67 @@ interface Props {
   failedCount:  number;
   orgId:        string;
   slug:         string;
+  appVersion:   { latest?: string; force?: boolean } | null;
+  isAdmin:      boolean;
 }
 
-export function NotificationsClient({ logs: initial, todayCount, failedCount, orgId, slug }: Props) {
+export function NotificationsClient({ logs: initial, todayCount, failedCount, orgId, slug, appVersion, isAdmin }: Props) {
   const router    = useRouter();
-  const supabase  = createClient();
-  const [logs, setLogs]         = useState<Log[]>(initial);
-  const [selected, setSelected] = useState<Log | null>(null);
-  const [clearing, setClearing] = useState(false);
+  const [logs, setLogs]           = useState<Log[]>(initial);
+  const [selected, setSelected]   = useState<Log | null>(null);
+  const [clearing, setClearing]   = useState(false);
+  const [newVersion, setNewVersion] = useState(appVersion?.latest ?? "");
+  const [forceUpdate, setForceUpdate] = useState(appVersion?.force ?? false);
+  const [savingVersion, setSavingVersion] = useState(false);
+  const [versionSaved, setVersionSaved]   = useState(false);
 
   async function handleClear() {
     if (!confirm("Delete all SMS logs for your school? This cannot be undone.")) return;
     setClearing(true);
-    const { error } = await supabase
-      .from("notifications_log")
-      .delete()
-      .eq("organisation_id", orgId);
-    if (error) {
-      alert("Failed to clear: " + error.message);
-    } else {
+    try {
+      // Use the API route (service role) — the anon Supabase client is blocked
+      // by RLS on notifications_log DELETE which only allows platform admins.
+      const res = await fetch(`/${slug}/api/clear-notifications`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert("Failed to clear: " + (body.error ?? res.statusText));
+        return;
+      }
+      const { deleted } = await res.json();
       setLogs([]);
       router.refresh();
+      // Brief confirmation so admin knows it worked
+      console.log(`[notifications] cleared ${deleted} rows from DB`);
+    } catch (err) {
+      alert("Network error — could not clear logs.");
+      console.error("[clear-notifications]", err);
+    } finally {
+      setClearing(false);
     }
-    setClearing(false);
+  }
+
+  async function handleSaveVersion() {
+    if (!newVersion.trim()) return;
+    setSavingVersion(true);
+    setVersionSaved(false);
+    try {
+      const res = await fetch(`/${slug}/api/update-app-version`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ latest: newVersion.trim(), force: forceUpdate }),
+      });
+      if (res.ok) {
+        setVersionSaved(true);
+        setTimeout(() => setVersionSaved(false), 3000);
+        router.refresh();
+      } else {
+        alert("Failed to save version.");
+      }
+    } finally {
+      setSavingVersion(false);
+    }
   }
 
   const statusColor = (status: string) =>
@@ -66,16 +103,57 @@ export function NotificationsClient({ logs: initial, todayCount, failedCount, or
           <p className="page-sub">Every parent alert sent by your school via SMS or WhatsApp</p>
         </div>
         {logs.length > 0 && (
-          <button
-            onClick={handleClear}
-            disabled={clearing}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors disabled:opacity-50"
-          >
+          <button onClick={handleClear} disabled={clearing} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors disabled:opacity-50">
             <Trash2 size={13} />
             {clearing ? "Clearing…" : "Clear All"}
           </button>
         )}
       </div>
+
+      {/* App version update panel — admins only */}
+      {isAdmin && (
+        <div className="card p-4 border-blue-200 dark:border-blue-800/40 bg-blue-50/50 dark:bg-blue-950/10">
+          <div className="flex items-center gap-2 mb-3">
+            <Bell size={14} className="text-blue-500" />
+            <span className="text-sm font-semibold text-slate-900 dark:text-white">Mobile App Version</span>
+            <span className="text-xs text-slate-400">— when you push a new app build, update this to notify users</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Current latest version</label>
+              <input
+                type="text"
+                placeholder="e.g. 1.1.0"
+                value={newVersion}
+                onChange={(e) => setNewVersion(e.target.value)}
+                className="input-base text-sm"
+                style={{ maxWidth: 140 }}
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 mt-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={forceUpdate}
+                onChange={(e) => setForceUpdate(e.target.checked)}
+                className="rounded"
+              />
+              Force update (old version stops working)
+            </label>
+            <button
+              onClick={handleSaveVersion}
+              disabled={savingVersion || !newVersion.trim()}
+              className="mt-4 flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {savingVersion ? "Saving…" : versionSaved ? "✓ Saved" : "Push Update"}
+            </button>
+          </div>
+          <p className="text-xs text-slate-400 mt-2">
+            {forceUpdate
+              ? "⚠️ Force update: users will see a red banner saying the old version is unsupported."
+              : "Soft update: users see a green banner on their Settings screen — they can dismiss it."}
+          </p>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">

@@ -2,6 +2,7 @@
 // SMS log — shows every message sent, full text, who received it.
 // Uses two separate queries (no relational join) to avoid RLS silently
 // dropping rows the same way the excuses page was broken.
+// Also shows app version banner so admin can push update prompts.
 
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
@@ -86,6 +87,15 @@ export default async function NotificationsPage({
     full_name: l.member_id ? (nameMap[l.member_id] ?? null) : null,
   }));
 
+  // ── App version from platform_settings ───────────────────────────────────
+  const { data: versionRow } = await adminSupabase
+    .from("platform_settings")
+    .select("value, updated_at")
+    .eq("key", "app_version")
+    .single();
+
+  const appVersion = versionRow?.value as { latest?: string; force?: boolean } | null;
+
   return (
     <NotificationsClient
       logs={logs}
@@ -93,6 +103,8 @@ export default async function NotificationsPage({
       failedCount={failedRes.count ?? 0}
       orgId={orgId}
       slug={slug}
+      appVersion={appVersion ?? null}
+      isAdmin={orgUser.role === "admin"}
     />
   );
 }
