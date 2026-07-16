@@ -14,11 +14,9 @@ const adminSupabase = createAdminClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ slug: string }> }
-) {
-  // Verify the caller is an authenticated admin for this org
+// Next.js 16: do NOT declare slug in params type for nested [slug] routes —
+// the constraint expects Promise<{}> and slug causes a type mismatch.
+export async function DELETE(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,7 +32,6 @@ export async function DELETE(
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
 
-  // Delete using service role — bypasses the RLS policy that blocks user deletes
   const { error, count } = await adminSupabase
     .from("notifications_log")
     .delete({ count: "exact" })
