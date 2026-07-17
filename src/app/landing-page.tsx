@@ -9,7 +9,7 @@ import {
   GraduationCap, QrCode, Bell, BarChart3, Users, CheckCircle,
   ArrowRight, Smartphone, Zap, Search, Loader2,
   Wifi, MessageCircle, X, ChevronDown, ChevronUp, Shield, Clock,
-  Download,
+  Download, Calculator,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -155,12 +155,155 @@ const FEATURES = [
   { icon: Users,      title: "Multi-Role Access",   color: "#2dd4bf", bg: "rgba(45,212,191,0.08)",  desc: "Admin, Teacher, Gateman — each sees only what they need. Parent portal needs only a phone number." },
 ];
 
-const PLANS = [
-  { name: "Trial",    price: "Free",    period: "30 days",   members: 30,   sms: 100,   highlight: false, badge: null,            cta: "Start free" },
-  { name: "Basic",    price: "₦12,000", period: "per month", members: 100,  sms: 500,   highlight: false, badge: null,            cta: "Get started" },
-  { name: "Standard", price: "₦20,000", period: "per month", members: 300,  sms: 2000,  highlight: true,  badge: "Most popular",  cta: "Get started" },
-  { name: "Premium",  price: "₦35,000", period: "per month", members: 1000, sms: 10000, highlight: false, badge: null,            cta: "Get started" },
-];
+type PriceMap = Record<string, number>;
+type LimitMap = Record<string, { members: number; sms: number }>;
+
+// Builds the plan cards from live prices/limits (passed down from page.tsx,
+// sourced from platform_settings via the admin panel). Falls back to the
+// same numbers that used to be hardcoded here if a plan is missing.
+function buildPlans(prices: PriceMap, limits: LimitMap) {
+  const DEFAULTS: Record<string, { members: number; sms: number }> = {
+    trial: { members: 30, sms: 100 },
+    basic: { members: 100, sms: 500 },
+    standard: { members: 300, sms: 2000 },
+    premium: { members: 1000, sms: 10000 },
+  };
+
+  const formatPrice = (n: number) => (n === 0 ? "Free" : `₦${n.toLocaleString("en-NG")}`);
+
+  return [
+    { key: "trial",    name: "Trial",    period: "30 days",   highlight: false, badge: null,           cta: "Start free" },
+    { key: "basic",    name: "Basic",    period: "per month", highlight: false, badge: null,           cta: "Get started" },
+    { key: "standard", name: "Standard", period: "per month", highlight: true,  badge: "Most popular", cta: "Get started" },
+    { key: "premium",  name: "Premium",  period: "per month", highlight: false, badge: null,           cta: "Get started" },
+  ].map((plan) => ({
+    ...plan,
+    price: formatPrice(prices[plan.key] ?? 0),
+    members: limits[plan.key]?.members ?? DEFAULTS[plan.key].members,
+    sms: limits[plan.key]?.sms ?? DEFAULTS[plan.key].sms,
+  }));
+}
+
+// ─────────────────────────────────────────────────────────────
+// 3b. PRICING CALCULATOR
+// ─────────────────────────────────────────────────────────────
+function PriceCalculator({ prices, limits }: { prices: PriceMap; limits: LimitMap }) {
+  const [students, setStudents] = useState(50);
+  const plans = buildPlans(prices, limits);
+
+  const recommended =
+    plans.find((p) => p.members >= students) ?? plans[plans.length - 1];
+  const smsEstimate = students * 22;
+  const smsWarning = smsEstimate > recommended.sms && recommended.sms < 99999;
+  const recPriceNum = prices[recommended.key] ?? 0;
+  const perStudent = recPriceNum > 0 ? Math.round(recPriceNum / students) : 0;
+
+  return (
+    <div className="atd-calc">
+      <div className="atd-calc-head">
+        <div className="atd-calc-icon">
+          <Calculator size={17} color="#4ade80" />
+        </div>
+        <div>
+          <div className="atd-calc-title">Pricing calculator</div>
+          <div className="atd-calc-sub">See what Attendy costs for your school</div>
+        </div>
+      </div>
+
+      <div className="atd-calc-row">
+        <span className="atd-calc-label">Number of students</span>
+        <input
+          type="number"
+          min={1}
+          max={5000}
+          value={students}
+          onChange={(e) => {
+            const v = Math.max(1, Math.min(5000, parseInt(e.target.value) || 1));
+            setStudents(v);
+          }}
+          className="atd-calc-input"
+        />
+      </div>
+      <input
+        type="range"
+        min={1}
+        max={2000}
+        step={10}
+        value={Math.min(students, 2000)}
+        onChange={(e) => setStudents(parseInt(e.target.value))}
+        className="atd-calc-slider"
+      />
+      <div className="atd-calc-ticks">
+        <span>1</span><span>500</span><span>1000</span><span>1500</span><span>2000+</span>
+      </div>
+
+      <div className="atd-calc-result">
+        <div className="atd-calc-result-top">
+          <div>
+            <div className="atd-calc-rec-tag">
+              <Zap size={11} /> Recommended
+            </div>
+            <div className="atd-calc-rec-name">{recommended.name} Plan</div>
+            <div className="atd-calc-rec-detail">
+              Up to {recommended.members >= 99999 ? "unlimited" : recommended.members.toLocaleString()} students
+              {" · "}
+              {recommended.sms >= 99999 ? "unlimited" : recommended.sms.toLocaleString()} SMS/month
+            </div>
+          </div>
+          <div>
+            <div className="atd-calc-rec-price">{recommended.price}</div>
+            {recPriceNum > 0 && <div className="atd-calc-rec-period">per month</div>}
+          </div>
+        </div>
+
+        {recPriceNum > 0 && (
+          <div className="atd-calc-stats">
+            <div>
+              <div className="atd-calc-stat-label">Per student</div>
+              <div className="atd-calc-stat-val">₦{perStudent.toLocaleString()}/mo</div>
+            </div>
+            <div>
+              <div className="atd-calc-stat-label">Annual cost</div>
+              <div className="atd-calc-stat-val">₦{(recPriceNum * 12).toLocaleString()}/yr</div>
+            </div>
+            <div>
+              <div className="atd-calc-stat-label">Est. SMS needed</div>
+              <div className="atd-calc-stat-val">~{smsEstimate.toLocaleString()}/mo</div>
+            </div>
+          </div>
+        )}
+
+        {smsWarning && (
+          <div className="atd-calc-warning">
+            ⚠ Estimated SMS usage (~{smsEstimate.toLocaleString()}/mo) exceeds this plan&apos;s {recommended.sms.toLocaleString()} SMS limit.
+            Consider {plans[plans.indexOf(recommended) + 1]?.name ?? "a higher plan"} or ask us about a custom SMS bundle.
+          </div>
+        )}
+      </div>
+
+      <div className="atd-calc-strip">
+        {plans.map((plan) => {
+          const isRec = plan.key === recommended.key;
+          const fits = plan.members >= students;
+          return (
+            <div
+              key={plan.key}
+              className="atd-calc-chip"
+              style={{
+                background: isRec ? "rgba(34,197,94,0.1)" : "transparent",
+                borderColor: isRec ? "#16a34a" : "rgba(255,255,255,0.07)",
+                opacity: fits ? 1 : 0.35,
+              }}
+            >
+              <div className="atd-calc-chip-name">{plan.name}</div>
+              <div className="atd-calc-chip-price">{plan.price}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 const FAQS = [
   { q: "Do students need a smartphone?",        a: "No. Students only need their printed QR card — a laminated card or sticker is fine. Only the gateman's phone needs to run the scanner." },
@@ -181,9 +324,15 @@ const SOCIAL_PROOF = [
 // ─────────────────────────────────────────────────────────────
 // 5.  MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────
-export default function LandingPage() {
+interface LandingPageProps {
+  prices: PriceMap;
+  limits: LimitMap;
+}
+
+export default function LandingPage({ prices, limits }: LandingPageProps) {
   const router = useRouter();
   const apkUrl = process.env.NEXT_PUBLIC_ANDROID_APK_URL;
+  const PLANS = buildPlans(prices, limits);
 
   // Hero entrance
   const [heroIn,   setHeroIn]   = useState(false);
@@ -709,6 +858,75 @@ export default function LandingPage() {
           background: rgba(34,197,94,0.08);
           border-color: rgba(34,197,94,0.3);
         }
+
+        /* Pricing calculator */
+        .atd-calc {
+          border: 1px solid rgba(255,255,255,0.08);
+          background: rgba(255,255,255,0.02);
+          border-radius: 20px;
+          padding: 24px;
+          margin-bottom: 20px;
+        }
+        .atd-calc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+        .atd-calc-icon {
+          width: 38px; height: 38px; border-radius: 12px;
+          background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.25);
+          display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .atd-calc-title { font-size: 15px; font-weight: 700; color: #fff; }
+        .atd-calc-sub { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 1px; }
+        .atd-calc-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 12px; }
+        .atd-calc-label { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.75); }
+        .atd-calc-input {
+          width: 84px; text-align: right; padding: 6px 10px;
+          border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
+          background: rgba(255,255,255,0.03); color: #fff;
+          font-family: monospace; font-size: 13px; font-weight: 700;
+          outline: none;
+        }
+        .atd-calc-input:focus { border-color: #16a34a; }
+        .atd-calc-slider {
+          width: 100%; accent-color: #16a34a; height: 6px; margin: 6px 0 4px;
+        }
+        .atd-calc-ticks {
+          display: flex; justify-content: space-between;
+          font-size: 10px; color: rgba(255,255,255,0.25); font-family: monospace;
+          margin-bottom: 20px;
+        }
+        .atd-calc-result {
+          border: 1.5px solid #16a34a; background: rgba(22,163,74,0.08);
+          border-radius: 16px; padding: 18px;
+        }
+        .atd-calc-result-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .atd-calc-rec-tag {
+          display: flex; align-items: center; gap: 6px;
+          font-size: 11px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.06em; color: #4ade80; margin-bottom: 6px;
+        }
+        .atd-calc-rec-name { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -0.02em; }
+        .atd-calc-rec-detail { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+        .atd-calc-rec-price { font-size: 26px; font-weight: 800; color: #fff; letter-spacing: -0.02em; text-align: right; }
+        .atd-calc-rec-period { font-size: 11px; color: rgba(255,255,255,0.35); text-align: right; }
+        .atd-calc-stats {
+          display: flex; gap: 20px; flex-wrap: wrap;
+          margin-top: 14px; padding-top: 14px;
+          border-top: 1px solid rgba(255,255,255,0.08);
+        }
+        .atd-calc-stat-label { font-size: 11px; color: rgba(255,255,255,0.4); }
+        .atd-calc-stat-val { font-size: 13px; font-weight: 700; color: #fff; margin-top: 1px; }
+        .atd-calc-warning {
+          margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+          background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.25);
+          font-size: 12px; color: #fbbf24; line-height: 1.5;
+        }
+        .atd-calc-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 16px; }
+        .atd-calc-chip {
+          border-radius: 10px; padding: 8px 4px; text-align: center;
+          border: 1px solid rgba(255,255,255,0.07);
+          transition: opacity 0.15s;
+        }
+        .atd-calc-chip-name { font-size: 10px; font-weight: 700; color: #fff; }
+        .atd-calc-chip-price { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 2px; font-family: monospace; }
 
         /* FAQ */
         .atd-faq {
@@ -1263,6 +1481,7 @@ export default function LandingPage() {
           <h2 className="atd-section-title">Simple plans, all in Naira.</h2>
           <p className="atd-section-sub">Every plan starts with a free first month. SMS overage is blocked, never billed.</p>
         </div>
+        <PriceCalculator prices={prices} limits={limits} />
         <div className="atd-plan-grid">
           {PLANS.map(plan => (
             <div className={`atd-plan ${plan.highlight ? "atd-plan--highlight" : ""}`} key={plan.name}>

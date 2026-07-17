@@ -1,6 +1,48 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAnonClient } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 import LandingPage from "./landing-page";
+
+// ── Fallback prices ────────────────────────────────────────────────────────
+// Matches what's already hardcoded on attendy-web and in platform-settings.ts.
+// Used only if the DB / RPC is unreachable.
+const FALLBACK_PRICES = { trial: 0, basic: 12000, standard: 20000, premium: 35000, enterprise: 80000 };
+const FALLBACK_LIMITS = {
+  trial:      { members: 30,    sms: 100    },
+  basic:      { members: 100,   sms: 500    },
+  standard:   { members: 300,   sms: 2000   },
+  premium:    { members: 1000,  sms: 10000  },
+  enterprise: { members: 99999, sms: 999999 },
+};
+
+// Same pattern as attendy-web: anon key + get_public_prices() RPC (SECURITY
+// DEFINER, granted to anon). This page is already fully dynamic (it reads
+// cookies for auth), so prices are fetched fresh on every request — no ISR
+// needed here, admin changes show up immediately on next page load.
+async function getPrices() {
+  try {
+    const supabase = createAnonClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { persistSession: false } }
+    );
+
+    const { data, error } = await supabase.rpc("get_public_prices");
+
+    if (error || !data) {
+      console.warn("[attendy] get_public_prices RPC failed:", error?.message, "— using fallback prices");
+      return { prices: FALLBACK_PRICES, limits: FALLBACK_LIMITS };
+    }
+
+    return {
+      prices: { ...FALLBACK_PRICES, ...data.prices },
+      limits: { ...FALLBACK_LIMITS, ...data.limits },
+    };
+  } catch (err) {
+    console.warn("[attendy] getPrices threw:", err, "— using fallback prices");
+    return { prices: FALLBACK_PRICES, limits: FALLBACK_LIMITS };
+  }
+}
 
 export default async function RootPage({
   searchParams,
@@ -32,5 +74,7 @@ export default async function RootPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (user) redirect("/dashboard");
 
-  return <LandingPage />;
+  const { prices, limits } = await getPrices();
+
+  return <LandingPage prices={prices} limits={limits} />;
 }
