@@ -206,7 +206,9 @@ export async function POST(req: NextRequest) {
 
   const newUser = newUserData.user;
 
-  // 7. Create org_users row — links auth user → this school with the given role
+  // 7. Create org_users row — links auth user → this school with the given role.
+  // We also store email directly in org_users so it's always queryable without
+  // needing auth.admin.listUsers() (which requires service role + is slow).
   const { error: orgUserInsertError } = await adminSupabase
     .from("org_users")
     .upsert(
@@ -215,6 +217,7 @@ export async function POST(req: NextRequest) {
         organisation_id: orgId,
         role,
         is_active:       true,
+        email:           newUser.email ?? email.trim().toLowerCase(),
       },
       { onConflict: "user_id,organisation_id" }
     );

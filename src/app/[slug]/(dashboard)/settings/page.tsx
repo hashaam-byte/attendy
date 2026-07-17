@@ -1,5 +1,3 @@
-
-
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { SettingsClient } from "./setiings-client";
@@ -78,7 +76,7 @@ export default async function SettingsPage({
     supabase.from("organisations").select("*").eq("id", orgId).single(),
 
     supabase.from("org_users")
-      .select("id, user_id, role, is_active, created_at")
+      .select("id, user_id, role, is_active, created_at, email")
       .eq("organisation_id", orgId)
       .order("created_at"),
 
@@ -108,21 +106,13 @@ export default async function SettingsPage({
     assignmentMap.set(a.org_user_id, list);
   });
 
-  // Fetch user emails from auth metadata
-  const userIds = (staffRows ?? []).map((s) => s.user_id);
-  const emailMap = new Map<string, string | null>();
-  
-  if (userIds.length > 0) {
-    const { data: { users: authUsers } } = await supabase.auth.admin.listUsers();
-    (authUsers ?? []).forEach((u) => {
-      emailMap.set(u.id, u.email ?? null);
-    });
-  }
-
-  // Enrich staff with their email and current class assignments
+  // Read emails directly from org_users.email column — much faster than
+  // calling auth.admin.listUsers() which fetches ALL users in the project
+  // and requires the service role. The email column is always populated
+  // by create-school-user (both edu and admin paths).
   const enrichedStaff = (staffRows ?? []).map((s) => ({
     ...s,
-    email: emailMap.get(s.user_id) ?? null,
+    email:       s.email ?? null,
     assignments: assignmentMap.get(s.id) ?? [],
   }));
 
