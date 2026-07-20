@@ -835,6 +835,21 @@ export function SettingsClient({ org, staff: initialStaff, classes, currentUserI
         </div>
       </Section>
 
+      {/* ── Custom Classes ── */}
+      <Section title="Classes & Groups" icon={<BookOpen size={15} style={{ color: "var(--accent)" }} />}>
+        <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+          Define your school's custom class list. Works for primary schools, secondary, universities, lesson centres, offices — any grouping. Students pick from this list when registering.
+        </p>
+        <Link
+          href={`/${slug}/settings/classes`}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+        >
+          <BookOpen size={14} />
+          Manage Classes & Groups
+          <span style={{ color: "var(--text-muted)" }} className="text-xs">→</span>
+        </Link>
+      </Section>
+
       {/* ── Class Assignments ── (NOW WIRED IN) */}
       <Section title="Class Assignments" icon={<BookOpen size={15} style={{ color: "var(--accent)" }} />}>
         <p className="text-xs" style={{ color: "var(--text-muted)" }}>
