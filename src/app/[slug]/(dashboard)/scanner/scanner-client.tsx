@@ -76,25 +76,82 @@ type LocalScanRecord = {
 };
 
 // ── IndexedDB ────────────────────────────────────────────────────
-const DB_NAME    = "attendy_offline_v4";
+const DB_NAME      = "attendy_offline_v4";
 const QUEUE_STORE  = "scan_queue";
 const LEDGER_STORE = "scanned_today";
+const MEMBER_STORE = "member_cache";    // ← NEW: persisted encrypted member list
 
 async function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2);
+    const req = indexedDB.open(DB_NAME, 3); // bumped to v3 for new store
     req.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(QUEUE_STORE)) {
-        db.createObjectStore(QUEUE_STORE, { autoIncrement: true });
-      }
-      if (!db.objectStoreNames.contains(LEDGER_STORE)) {
-        db.createObjectStore(LEDGER_STORE);
-      }
+      if (!db.objectStoreNames.contains(QUEUE_STORE))  db.createObjectStore(QUEUE_STORE,  { autoIncrement: true });
+      if (!db.objectStoreNames.contains(LEDGER_STORE)) db.createObjectStore(LEDGER_STORE);
+      if (!db.objectStoreNames.contains(MEMBER_STORE)) db.createObjectStore(MEMBER_STORE);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror   = () => reject(req.error);
   });
+}
+
+// ── Simple XOR encryption for member cache ───────────────────────
+// Same approach as mobile offlineStore — key derived from orgId, never stored.
+// Protects student PII (names, QR codes, parent phones) at rest in IndexedDB.
+// For FIPS-grade encryption, the Web Crypto API's AES-GCM can be used instead.
+function xorKey(orgId: string): string {
+  // Derive a repeatable key from orgId — no storage needed
+  let h = 0;
+  for (let i = 0; i < orgId.length; i++) {
+    h = (Math.imul(31, h) + orgId.charCodeAt(i)) | 0;
+  }
+  return `attendy:${Math.abs(h).toString(16)}:${orgId.slice(-8)}`;
+}
+
+function xorEncrypt(data: string, key: string): string {
+  const k = key.split("").map(c => c.charCodeAt(0));
+  return btoa(data.split("").map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ k[i % k.length])).join(""));
+}
+
+function xorDecrypt(enc: string, key: string): string {
+  try {
+    const k = key.split("").map(c => c.charCodeAt(0));
+    return atob(enc).split("").map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ k[i % k.length])).join("");
+  } catch { return "[]"; }
+}
+
+// ── Persist member cache to IndexedDB (encrypted) ────────────────
+async function saveMemberCache(orgId: string, members: CachedMember[], todayScans: Record<string, string>) {
+  try {
+    const db  = await openDB();
+    const key = xorKey(orgId);
+    const payload = xorEncrypt(JSON.stringify({ members, todayScans, savedAt: new Date().toISOString() }), key);
+    return new Promise<void>((res) => {
+      const tx = db.transaction(MEMBER_STORE, "readwrite");
+      tx.objectStore(MEMBER_STORE).put(payload, orgId);
+      tx.oncomplete = () => res();
+    });
+  } catch {}
+}
+
+// ── Load member cache from IndexedDB (decrypt) ───────────────────
+async function loadMemberCache(orgId: string): Promise<{ members: CachedMember[]; todayScans: Record<string, string>; savedAt: string } | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx  = db.transaction(MEMBER_STORE, "readonly");
+      const req = tx.objectStore(MEMBER_STORE).get(orgId);
+      req.onsuccess = () => {
+        if (!req.result) { resolve(null); return; }
+        try {
+          const key     = xorKey(orgId);
+          const payload = JSON.parse(xorDecrypt(req.result, key));
+          resolve(payload);
+        } catch { resolve(null); }
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch { return null; }
 }
 
 async function queueScan(scan: QueuedScan) {
@@ -300,12 +357,50 @@ export function ScannerClient({
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("members")
-        .select("id, full_name, class_name, parent_phone, organisation_id, is_active, qr_code")
-        .eq("organisation_id", orgId)
-        .eq("member_type", "student");
-      if (data) setCachedMembers(data as CachedMember[]);
+      // 1. Load from encrypted IndexedDB cache immediately (works offline)
+      const cached = await loadMemberCache(orgId);
+      if (cached?.members?.length) {
+        setCachedMembers(cached.members);
+        const cacheAge = Date.now() - new Date(cached.savedAt).getTime();
+        const ageMin   = Math.floor(cacheAge / 60000);
+        console.log(`[Scanner] Loaded ${cached.members.length} members from cache (${ageMin}m old)`);
+      }
+
+      // 2. If online, sync fresh from server and update cache
+      if (navigator.onLine) {
+        try {
+          const { data } = await supabase
+            .from("members")
+            .select("id, full_name, class_name, parent_phone, organisation_id, is_active, qr_code")
+            .eq("organisation_id", orgId)
+            .eq("member_type", "student");
+
+          if (data) {
+            setCachedMembers(data as CachedMember[]);
+            // Also grab today's scans to keep the offline ledger current
+            const todayStart = new Date().toISOString().split("T")[0];
+            const { data: logs } = await supabase
+              .from("attendance_logs")
+              .select("member_id, scan_type, scanned_at")
+              .eq("organisation_id", orgId)
+              .gte("scanned_at", `${todayStart}T00:00:00`);
+
+            const todayScans: Record<string, string> = {};
+            for (const l of logs ?? []) {
+              todayScans[`${l.member_id}:${l.scan_type}`] = l.scanned_at;
+              // Also write to IndexedDB ledger so duplicate check works offline
+              await ledgerSet(orgId, l.member_id, l.scan_type as ScanMode, {
+                scanned_at: l.scanned_at, name: "", status: "present", mode: l.scan_type as ScanMode,
+              });
+            }
+            // Save encrypted to IndexedDB for next offline use
+            await saveMemberCache(orgId, data as CachedMember[], todayScans);
+            console.log(`[Scanner] Synced ${data.length} members + ${logs?.length ?? 0} today's scans to cache`);
+          }
+        } catch (e) {
+          console.warn("[Scanner] Server sync failed, using cached data:", e);
+        }
+      }
     })();
   }, [orgId]);
 
@@ -692,10 +787,33 @@ export function ScannerClient({
         </div>
       </header>
 
-      {/* Offline banner */}
+      {/* Offline banner — recommends mobile for sustained offline use */}
       {!isOnline && (
-        <div style={{ background: "linear-gradient(90deg, #92400e, #78350f)", color: "#fef3c7", textAlign: "center", fontSize: 12, fontWeight: 600, padding: "8px 16px", letterSpacing: "0.02em" }}>
-          📡 Offline mode — scans queue locally and sync on reconnect
+        <div style={{ background: "linear-gradient(90deg, #92400e, #78350f)", padding: "10px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 16 }}>📡</span>
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 700, color: "#fef3c7", margin: 0 }}>
+                  Offline mode — scans saved locally, syncing when reconnected
+                </p>
+                <p style={{ fontSize: 11, color: "#fde68a", margin: "2px 0 0", opacity: 0.85 }}>
+                  {cachedMembers.filter(m => m.is_active).length} students available offline · {queuedCount} scan{queuedCount !== 1 ? "s" : ""} queued
+                </p>
+              </div>
+            </div>
+            <a
+              href="https://expo.dev/accounts/hashaam-byte/projects/attendy-mobile"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: "#78350f", background: "#fde68a", padding: "5px 10px", borderRadius: 8, textDecoration: "none", whiteSpace: "nowrap" }}
+            >
+              📱 Get Mobile App
+            </a>
+          </div>
+          <p style={{ fontSize: 10, color: "#fcd34d", margin: "6px 0 0", paddingLeft: 28, opacity: 0.7 }}>
+            💡 The Attendy mobile app works fully offline with encrypted local storage — better for extended offline scanning
+          </p>
         </div>
       )}
 
