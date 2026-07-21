@@ -134,6 +134,28 @@ serve(async (_req: Request) => {
         error_message:       sent ? null : "Termii send failed",
       });
 
+      // Send push notification to parent alongside SMS
+      // Fire-and-forget — never block the SMS loop on push failures
+      const supabaseUrl = getEnv("SUPABASE_URL");
+      const serviceKey  = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+      if (supabaseUrl && serviceKey) {
+        fetch(`${supabaseUrl}/functions/v1/send-push`, {
+          method:  "POST",
+          headers: {
+            "Content-Type":  "application/json",
+            "Authorization": `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({
+            type:      "absent",
+            org_id:    org.id,
+            title:     `${student.full_name} is absent`,
+            body:      `${student.full_name} has not been scanned at ${org.name} today. Contact the school if unexpected.`,
+            target:    "parent",
+            member_id: student.id,
+          }),
+        }).catch(() => {}); // silently ignore push failures
+      }
+
       if (sent) totalSent++;
       else      totalFailed++;
     }
