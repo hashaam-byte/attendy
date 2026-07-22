@@ -1,35 +1,34 @@
-import { createClient } from "@supabase/supabase-js";
+// supabase/functions/absence-alert/index.ts — ATTENDY-EDU
+// Deno edge function — uses ESM URLs, NOT npm package names.
+// Runs daily via pg_cron at 8 AM WAT (07:00 UTC Mon-Fri).
 
-const getEnv = (name: string) => {
-  const globalAny = globalThis as any;
-  return globalAny.Deno?.env?.get?.(name) ?? globalAny.process?.env?.[name];
-};
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const getEnv = (name: string): string => Deno.env.get(name) ?? "";
 
 const supabase = createClient(
-  getEnv("SUPABASE_URL") ?? "",
-  getEnv("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+  getEnv("SUPABASE_URL"),
+  getEnv("SUPABASE_SERVICE_ROLE_KEY")
 );
 
-const TERMII_KEY = getEnv("TERMII_API_KEY") ?? "";
-const TERMII_SENDER_ID = getEnv("TERMII_SENDER_ID") ?? "Attendy";
-// ── Normalise phone to 234XXXXXXXXXX ───────────────────────────
+const TERMII_KEY       = getEnv("TERMII_API_KEY");
+const TERMII_SENDER_ID = getEnv("TERMII_SENDER_ID") || "Attendy";
+const TERMII_URL       = "https://v3.api.termii.com/api/sms/send";
+
 function normalisePhone(phone: string): string {
-  const d = phone.replace(/\D/g, "");
-  if (d.startsWith("234")) return d;
-  if (d.startsWith("0") && d.length === 11) return "234" + d.slice(1);
-  return d;
+  let cleaned = phone.replace(/\D/g, "");
+  if (cleaned.startsWith("0"))   cleaned = "234" + cleaned.slice(1);
+  if (!cleaned.startsWith("234")) cleaned = "234" + cleaned;
+  return cleaned;
 }
 
-// ── Send SMS via Termii (generic channel only) ──────────────────
-// Generic works for all Nigerian numbers without a registered sender ID.
-// DND channel is not used — requires NCC approval per network.
 async function sendSms(to: string, message: string): Promise<boolean> {
   if (!TERMII_KEY) {
     console.log(`[DEV] SMS to ${to}: ${message}`);
     return true;
   }
   try {
-    const res = await fetch("https://v3.api.termii.com/api/sms/send", {
+    const res = await fetch(TERMII_URL, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -53,76 +52,56 @@ async function sendSms(to: string, message: string): Promise<boolean> {
   }
 }
 
-// ── Main handler ────────────────────────────────────────────────
-serve(async (_req: Request) => {
-  const today     = new Date().toISOString().split("T")[0];
-  const todayDow  = new Date().getDay(); // 0=Sun … 6=Sat
+Deno.serve(async (_req: Request) => {
+  const today = new Date().toISOString().split("T")[0];
+  let totalSent = 0, totalFailed = 0, totalSkipped = 0;
 
-  console.log(`[absence-alert] Running for ${today} (DOW=${todayDow})`);
-
-  // Fetch all active education orgs that have SMS on absence enabled
   const { data: orgs, error: orgErr } = await supabase
     .from("organisations")
-    .select("id, name, settings")
-    .eq("industry",  "education")
+    .select("id, name, settings, is_active, plan")
     .eq("is_active", true);
 
-  if (orgErr || !orgs) {
-    console.error("[absence-alert] Failed to fetch orgs:", orgErr?.message);
-    return new Response(JSON.stringify({ error: orgErr?.message }), { status: 500 });
+  if (orgErr) {
+    return new Response(JSON.stringify({ error: orgErr.message }), { status: 500 });
   }
 
-  let totalSent    = 0;
-  let totalSkipped = 0;
-  let totalFailed  = 0;
+  for (const org of orgs ?? []) {
+    const settings = (org.settings as any) ?? {};
+    if (!settings.sms_on_absence) { totalSkipped++; continue; }
 
-  for (const org of orgs) {
-    const settings      = (org.settings as any) ?? {};
-    const smsOnAbsence  = settings.sms_on_absence  ?? true;
-    const schoolDays    = (settings.school_days     ?? [1, 2, 3, 4, 5]) as number[];
-
-    // Skip if SMS on absence is disabled for this org
-    if (!smsOnAbsence) { totalSkipped++; continue; }
-
-    // Skip if today is not a school day for this org
-    if (!schoolDays.includes(todayDow)) {
-      console.log(`[absence-alert] ${org.name}: today is not a school day, skipping`);
+    const alertTime = settings.absence_alert_time ?? "09:00";
+    const [ah, am]  = alertTime.split(":").map(Number);
+    const nowWAT    = new Date(Date.now() + 60 * 60 * 1000); // UTC+1 approx
+    if (nowWAT.getHours() < ah || (nowWAT.getHours() === ah && nowWAT.getMinutes() < am)) {
+      totalSkipped++;
       continue;
     }
 
-    // Fetch all active students for this org
     const { data: students } = await supabase
       .from("members")
       .select("id, full_name, parent_phone")
       .eq("organisation_id", org.id)
-      .eq("member_type",     "student")
-      .eq("is_active",       true)
-      .not("parent_phone",   "is", null);
+      .eq("member_type", "student")
+      .eq("is_active", true)
+      .not("parent_phone", "is", null);
 
-    if (!students || students.length === 0) continue;
-
-    // Fetch today's entry scans for this org
     const { data: scans } = await supabase
       .from("attendance_logs")
       .select("member_id")
       .eq("organisation_id", org.id)
-      .eq("scan_type",       "entry")
-      .gte("scanned_at",     `${today}T00:00:00`);
+      .eq("scan_type", "entry")
+      .gte("scanned_at", `${today}T00:00:00`);
 
     const scannedIds = new Set((scans ?? []).map((s: any) => s.member_id));
 
-    // Process absent students
-    for (const student of students) {
-      if (scannedIds.has(student.id)) continue; // present — skip
+    for (const student of students ?? []) {
+      if (scannedIds.has(student.id)) continue;
 
-      const phone = normalisePhone(student.parent_phone!);
-      const message =
-        `Attendy: ${student.full_name} has not been scanned at ${org.name} today (${today}). ` +
-        `Please contact the school if this is unexpected.`;
+      const phone   = normalisePhone(student.parent_phone!);
+      const message = `Attendy: ${student.full_name} has not been scanned at ${org.name} today (${today}). Please contact the school if this is unexpected.`;
 
       const sent = await sendSms(phone, message);
 
-      // Log to notifications_log
       await supabase.from("notifications_log").insert({
         organisation_id:     org.id,
         member_id:           student.id,
@@ -134,8 +113,7 @@ serve(async (_req: Request) => {
         error_message:       sent ? null : "Termii send failed",
       });
 
-      // Send push notification to parent alongside SMS
-      // Fire-and-forget — never block the SMS loop on push failures
+      // Fire push notification alongside SMS
       const supabaseUrl = getEnv("SUPABASE_URL");
       const serviceKey  = getEnv("SUPABASE_SERVICE_ROLE_KEY");
       if (supabaseUrl && serviceKey) {
@@ -149,32 +127,19 @@ serve(async (_req: Request) => {
             type:      "absent",
             org_id:    org.id,
             title:     `${student.full_name} is absent`,
-            body:      `${student.full_name} has not been scanned at ${org.name} today. Contact the school if unexpected.`,
+            body:      `${student.full_name} has not been scanned at ${org.name} today.`,
             target:    "parent",
             member_id: student.id,
           }),
-        }).catch(() => {}); // silently ignore push failures
+        }).catch(() => {});
       }
 
-      if (sent) totalSent++;
-      else      totalFailed++;
+      if (sent) totalSent++; else totalFailed++;
     }
   }
 
-  const summary = {
-    date:    today,
-    orgs:    orgs.length,
-    sent:    totalSent,
-    skipped: totalSkipped,
-    failed:  totalFailed,
-  };
-
-  console.log("[absence-alert] Done:", summary);
-  return new Response(JSON.stringify(summary), {
-    headers: { "Content-Type": "application/json" },
-  });
+  return new Response(
+    JSON.stringify({ ok: true, sent: totalSent, failed: totalFailed, skipped: totalSkipped }),
+    { headers: { "Content-Type": "application/json" } }
+  );
 });
-
-function serve(arg0: (_req: Request) => Promise<Response>) {
-  throw new Error("Function not implemented.");
-}
