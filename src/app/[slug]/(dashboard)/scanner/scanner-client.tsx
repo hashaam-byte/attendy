@@ -547,7 +547,7 @@ export function ScannerClient({
             name:      member.full_name,
             className: member.class_name ?? undefined,
             time:      new Date().toLocaleTimeString(),
-            message:   `Already ${scanMode === "exit" ? "exited" : "scanned"} today at ${formatTime(existing[0].scanned_at)}`,
+            message:   `Already ${scanMode === "exit" ? "exited" : "scanned"} today at ${formatTime(existingRecord.scanned_at)}`,
           });
           setProcessing(false); clearResult(); return;
         }

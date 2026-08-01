@@ -1,7 +1,6 @@
 // src/app/api/scan-count/route.ts — ATTENDY-EDU
-// Returns the total number of rows in attendance_logs for the landing-page
-// live counter.  Matches the attendy-web marketing site approach:
-//   • Direct .select("*", { count: "exact", head: true }) — no RPC needed
+// Returns the total number of public scans for the landing-page live counter.
+// Uses the get_public_scan_count RPC for a consistent public query path.
 //   • revalidate = 300 (5 min) — consistent with the client's 5-min poll
 //   • Cache-Control: s-maxage=300, stale-while-revalidate=600 — CDN serves
 //     stale while revalidating, so most visitors pay zero DB cost
