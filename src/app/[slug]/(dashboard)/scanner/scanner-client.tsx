@@ -370,11 +370,7 @@ export function ScannerClient({
       if (navigator.onLine) {
         try {
           const { data } = await supabase
-            .from("members")
-            .select("id, full_name, class_name, parent_phone, organisation_id, is_active, qr_code")
-            .eq("organisation_id", orgId)
-            .eq("member_type", "student");
-
+          .rpc("get_org_roster_for_scan", { organisation_id: orgId });
           if (data) {
             setCachedMembers(data as CachedMember[]);
             // Also grab today's scans to keep the offline ledger current
@@ -413,13 +409,13 @@ export function ScannerClient({
     const queued = await getQueuedScans();
     for (const { key, value } of queued) {
       try {
-        const { error } = await supabase.from("attendance_logs").insert({
+        const { error } = await supabase.rpc("submit_scan", {
           organisation_id: value.organisation_id,
           member_id:       value.member_id,
           scan_type:       value.scan_type,
           status:          value.status,
           late_reason:     value.late_reason,
-          device_id:       "scanner-offline",
+          device_id:       value.device_id,
           scanned_at:      value.scanned_at,
         });
         if (!error) await deleteQueuedScan(key);
@@ -488,10 +484,7 @@ export function ScannerClient({
       let member: CachedMember | null = cachedMembers.find((m) => m.qr_code === qrCode) ?? null;
       if (!member && isOnline) {
         const { data } = await supabase
-          .from("members")
-          .select("id, full_name, class_name, parent_phone, organisation_id, is_active, qr_code")
-          .eq("qr_code", qrCode)
-          .eq("organisation_id", orgId)
+          .rpc("get_member_by_qr", { organisation_id: orgId, qr_code: qrCode })
           .maybeSingle();
         member = data as CachedMember | null;
       }
@@ -528,18 +521,21 @@ export function ScannerClient({
       // 3. Server duplicate check (online only)
       if (isOnline) {
         const todayStart = new Date().toISOString().split("T")[0];
-        const { data: existing } = await supabase
-          .from("attendance_logs")
-          .select("id, scanned_at")
-          .eq("member_id", member.id)
-          .eq("organisation_id", orgId)
-          .eq("scan_type", scanMode)
-          .gte("scanned_at", `${todayStart}T00:00:00`)
-          .limit(1);
+        const { data: existing, error: duplicateError } = await supabase
+          .rpc("check_duplicate_scan", {
+            organisation_id: orgId,
+            member_id:       member.id,
+            scan_type:       scanMode,
+            from_scanned_at: `${todayStart}T00:00:00`,
+          });
 
-        if (existing && existing.length > 0) {
+        if (duplicateError) throw duplicateError;
+
+        const existingRecord = Array.isArray(existing) ? existing[0] : existing as any;
+
+        if (existingRecord) {
           await ledgerSet(orgId, member.id, scanMode, {
-            scanned_at: existing[0].scanned_at,
+            scanned_at: existingRecord.scanned_at,
             name: member.full_name,
             status: scanMode === "exit" ? "early_exit" : "present",
             mode: scanMode,
@@ -611,7 +607,7 @@ export function ScannerClient({
     };
 
     if (isOnline) {
-      const { error } = await supabase.from("attendance_logs").insert({
+      const { error } = await supabase.rpc("submit_scan", {
         organisation_id: scanData.organisation_id,
         member_id:       scanData.member_id,
         scan_type:       scanData.scan_type,

@@ -18,17 +18,21 @@ const anon = createClient(
 
 export async function GET() {
   try {
-    const { count, error } = await anon
-      .from("attendance_logs")
-      .select("*", { count: "exact", head: true });
+    const { data, error } = await anon.rpc("get_public_scan_count");
 
     if (error) {
       console.error("scan-count error:", error.message);
       return NextResponse.json({ count: 0 });
     }
 
+    const count = typeof data === "number"
+      ? data
+      : Array.isArray(data)
+      ? data[0]?.count ?? 0
+      : (data as any)?.count ?? 0;
+
     return NextResponse.json(
-      { count: count ?? 0 },
+      { count },
       {
         headers: {
           // 5 min fresh, serve stale for up to 10 min while revalidating.

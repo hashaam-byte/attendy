@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ exists: false }, { status: 400 });
 
   const { data } = await service
-    .from("organisations")
+    .from("v_public_org_lookup")
     .select("id, name, is_active, industry, plan_expires_at, logo_url, primary_color")
     .eq("slug", slug.toLowerCase().trim())
     .eq("industry", "education")

@@ -15,7 +15,7 @@ export default async function PublicScannerPage({
   const supabase = await createClient();
 
   const { data: org } = await supabase
-    .from("organisations")
+    .from("v_public_org_lookup")
     .select("id, name, is_active, industry, plan, plan_expires_at, primary_color, settings")
     .eq("slug", slug)
     .eq("industry", "education")
