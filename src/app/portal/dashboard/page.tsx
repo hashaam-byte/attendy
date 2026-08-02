@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import {
   LogOut, GraduationCap, CheckCircle, Clock, XCircle,
   CalendarDays, ChevronRight, Phone,
@@ -130,7 +129,6 @@ function AttendanceCalendar({ logs }: { logs: Log[] }) {
 // ── Main dashboard ─────────────────────────────────────────────
 export default function ParentDashboardPage() {
   const router   = useRouter();
-  const supabase = createClient();
   const { theme, setTheme } = useTheme();
 
   const [students,     setStudents]     = useState<Student[]>([]);
@@ -191,47 +189,51 @@ export default function ParentDashboardPage() {
     if (showRefresh) setRefreshing(true);
     else             setLoading(true);
 
-    // Fetch logs — 365 days back to support a full-term attendance %
-    const { data: logsData } = await supabase
-      .from("attendance_logs")
-      .select("id, scanned_at, status, scan_type, late_reason")
-      .eq("member_id",  studentId)
-      .eq("scan_type",  "entry")
-      .order("scanned_at", { ascending: false })
-      .limit(400);
+    // Cookie-authenticated route — server verifies the signed parent
+    // session and only ever returns data for a studentId that session
+    // was actually issued for. Replaces the old direct anon-key queries
+    // against attendance_logs / organisations.
+    try {
+      const res  = await fetch(`/api/portal/attendance?studentId=${encodeURIComponent(studentId)}`);
+      const data = await res.json();
 
-    setLogs(logsData ?? []);
+      if (!res.ok || !data.ok) {
+        if (res.status === 401) {
+          // Session expired server-side — send them back to log in again.
+          sessionStorage.removeItem("parent_session");
+          router.push("/portal");
+          return;
+        }
+        setLogs([]);
+      } else {
+        setLogs(data.logs ?? []);
 
-    // Fetch org info — only if we don't already have it cached
-    if (!orgMap[orgId]) {
-      const { data: orgData } = await supabase
-        .from("organisations")
-        .select("id, name, primary_color, logo_url, settings")
-        .eq("id", orgId)
-        .single();
-
-      if (orgData) {
-        setOrgMap((prev) => ({
-          ...prev,
-          [orgId]: {
-            name:          orgData.name,
-            primary_color: orgData.primary_color ?? "#16a34a",
-            logo_url:      orgData.logo_url ?? null,
-            settings:      orgData.settings ?? {},
-          },
-        }));
+        if (data.org && !orgMap[orgId]) {
+          setOrgMap((prev) => ({
+            ...prev,
+            [orgId]: {
+              name:          data.org.name,
+              primary_color: data.org.primary_color ?? "#16a34a",
+              logo_url:      data.org.logo_url ?? null,
+              settings:      data.org.settings ?? {},
+            },
+          }));
+        }
       }
+    } catch {
+      setLogs([]);
     }
 
     setLoading(false);
     setRefreshing(false);
-  }, [orgMap]);
+  }, [orgMap, router]);
 
   useEffect(() => {
     if (selected) fetchData(selected.id, selected.organisation_id);
   }, [selected?.id]);
 
   function handleLogout() {
+    fetch("/api/portal/logout", { method: "POST" }).catch(() => {});
     sessionStorage.removeItem("parent_session");
     sessionStorage.removeItem("parent_students"); // legacy cleanup
     sessionStorage.removeItem("parent_phone");    // legacy cleanup

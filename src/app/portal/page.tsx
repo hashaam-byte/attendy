@@ -4,12 +4,11 @@
 // one soft background glow, one typeface, no scanlines/grid/floating chips.
 // Parent login by phone. Staff login via slug modal. Same functionality.
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import {
   Loader2, Phone, ArrowRight, X, Search, GraduationCap,
-  Shield, ChevronRight,
+  Shield, ChevronRight, UserRound,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -64,6 +63,47 @@ function PhoneInput({
         onFocus={onFocus}
         onBlur={onBlur}
         placeholder="08012345678"
+        required
+        className="w-full bg-transparent text-[15px] outline-none"
+        style={{ padding: "12.5px 16px 12.5px 42px", color: "rgba(255,255,255,0.92)" }}
+      />
+    </div>
+  );
+}
+
+// ── Child's full name input ──────────────────────────────────────
+function NameInput({
+  value, onChange, focused, onFocus, onBlur,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  focused: boolean;
+  onFocus: () => void;
+  onBlur: () => void;
+}) {
+  return (
+    <div
+      className="relative rounded-xl overflow-hidden transition-all duration-200"
+      style={{
+        background: focused ? "rgba(34,197,94,0.06)" : "rgba(255,255,255,0.03)",
+        border: `1px solid ${focused ? "rgba(34,197,94,0.45)" : "rgba(255,255,255,0.08)"}`,
+        boxShadow: focused ? "0 0 0 3px rgba(34,197,94,0.12)" : "none",
+      }}
+    >
+      <div
+        className="absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-200"
+        style={{ color: focused ? "#4ade80" : "rgba(255,255,255,0.3)" }}
+      >
+        <UserRound size={15} />
+      </div>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        placeholder="e.g. Chidinma Okafor"
+        autoComplete="off"
         required
         className="w-full bg-transparent text-[15px] outline-none"
         style={{ padding: "12.5px 16px 12.5px 42px", color: "rgba(255,255,255,0.92)" }}
@@ -196,19 +236,18 @@ function StaffModal({ onClose }: { onClose: () => void }) {
 // ── Main portal page ────────────────────────────────────────────
 export default function ParentPortalPage() {
   const router = useRouter();
-  const supabase = createClient();
 
   const [phone, setPhone] = useState("");
+  const [childName, setChildName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [focused, setFocused] = useState(false);
+  const [phoneFocused, setPhoneFocused] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
   const [showStaffModal, setShowStaffModal] = useState(false);
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    // Rate limit: max 5 attempts per 60 seconds
+  // Client-side rate limit — a first line of defense so people don't
+  // hammer the button; the real limit lives server-side in /api/portal.
+  function clientRateLimited(): number | null {
     const now = Date.now();
     const WINDOW = 60_000;
     const MAX = 5;
@@ -216,50 +255,63 @@ export default function ParentPortalPage() {
     try { attempts = JSON.parse(sessionStorage.getItem("portal_attempts") ?? "[]"); } catch { attempts = []; }
     attempts = attempts.filter((t) => now - t < WINDOW);
     if (attempts.length >= MAX) {
-      const wait = Math.ceil((WINDOW - (now - Math.min(...attempts))) / 1000);
-      setError(`Too many attempts. Please wait ${wait}s and try again.`);
-      return;
+      return Math.ceil((WINDOW - (now - Math.min(...attempts))) / 1000);
     }
     attempts.push(now);
     sessionStorage.setItem("portal_attempts", JSON.stringify(attempts));
+    return null;
+  }
 
-    setLoading(true);
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
 
     const cleaned = phone.replace(/\D/g, "");
     if (cleaned.length < 10) {
       setError("Enter a valid Nigerian phone number");
-      setLoading(false);
+      return;
+    }
+    if (childName.trim().split(/\s+/).filter(Boolean).length < 2) {
+      setError("Enter your child's full name (first and last name)");
       return;
     }
 
-    const variants = [cleaned];
-    if (cleaned.startsWith("0") && cleaned.length === 11) variants.push("234" + cleaned.slice(1));
-    if (cleaned.startsWith("234")) variants.push("0" + cleaned.slice(3));
-
-    const { data: students } = await supabase
-      .from("members")
-      .select("id, full_name, class_name, organisation_id, parent_phone")
-      .in("parent_phone", variants)
-      .eq("member_type", "student")
-      .eq("is_active", true);
-
-    if (!students || students.length === 0) {
-      setError("No students found for this number. Check with your school admin.");
-      setLoading(false);
+    const wait = clientRateLimited();
+    if (wait) {
+      setError(`Too many attempts. Please wait ${wait}s and try again.`);
       return;
     }
 
-    // Store with a 30-minute TTL — prevents shared devices from leaking
-    // one parent's data to the next person who opens the browser.
-    sessionStorage.setItem("parent_session", JSON.stringify({
-      students,
-      phone,
-      expiresAt: Date.now() + 30 * 60 * 1000,
-    }));
-    router.push("/portal/dashboard");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/portal/verify-parent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: cleaned, childName }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? "Something went wrong. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      // Display-only data for the UI's student switcher. All real
+      // attendance/org reads go through cookie-authenticated API routes
+      // from here on — see /api/portal/attendance.
+      sessionStorage.setItem("parent_session", JSON.stringify({
+        students: data.students,
+        phone: cleaned,
+        expiresAt: Date.now() + 30 * 60 * 1000,
+      }));
+      router.push("/portal/dashboard");
+    } catch {
+      setError("Network error. Please try again.");
+      setLoading(false);
+    }
   }
 
-  const canSubmit = phone.length >= 10 && !loading;
+  const canSubmit = phone.length >= 10 && childName.trim().length >= 3 && !loading;
 
   return (
     <div
@@ -346,12 +398,26 @@ export default function ParentPortalPage() {
                 <PhoneInput
                   value={phone}
                   onChange={(v) => { setPhone(v); setError(null); }}
-                  focused={focused}
-                  onFocus={() => setFocused(true)}
-                  onBlur={() => setFocused(false)}
+                  focused={phoneFocused}
+                  onFocus={() => setPhoneFocused(true)}
+                  onBlur={() => setPhoneFocused(false)}
+                />
+                <p className="text-xs mt-1.5 mb-4" style={{ color: "rgba(255,255,255,0.3)" }}>
+                  As registered by your school admin
+                </p>
+
+                <label htmlFor="childName" className="block text-[13px] font-medium mb-1.5" style={{ color: "rgba(255,255,255,0.55)" }}>
+                  Your child's full name
+                </label>
+                <NameInput
+                  value={childName}
+                  onChange={(v) => { setChildName(v); setError(null); }}
+                  focused={nameFocused}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={() => setNameFocused(false)}
                 />
                 <p className="text-xs mt-1.5" style={{ color: "rgba(255,255,255,0.3)" }}>
-                  As registered by your school admin
+                  First and last name, exactly as registered
                 </p>
 
                 {error && (
@@ -383,7 +449,7 @@ export default function ParentPortalPage() {
                     {loading ? (
                       <>
                         <Loader2 size={15} className="animate-spin" />
-                        Searching
+                        Checking
                       </>
                     ) : (
                       <>
@@ -418,7 +484,7 @@ export default function ParentPortalPage() {
               className="px-7 py-3 flex items-center justify-center gap-3 border-t"
               style={{ background: "rgba(0,0,0,0.15)", borderColor: "rgba(255,255,255,0.06)" }}
             >
-              {["No account needed", "Phone number only", "Instant access"].map((text) => (
+              {["No account needed", "Free to log in", "Secure access"].map((text) => (
                 <span key={text} className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
                   {text}
                 </span>

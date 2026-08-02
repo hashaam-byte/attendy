@@ -5,7 +5,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import {
   FileCheck, Loader2, CheckCircle,
   AlertCircle, Sun, Moon,
@@ -22,7 +21,6 @@ type Student = {
 
 export default function ExcuseSubmissionPage() {
   const router   = useRouter();
-  const supabase = createClient();
   const { theme, setTheme } = useTheme();
 
   const [students,   setStudents]   = useState<Student[]>([]);
@@ -77,43 +75,31 @@ export default function ExcuseSubmissionPage() {
     const selected = students.find((s) => s.id === selectedId);
     if (!selected) { setLoading(false); return; }
 
-    const { error: insertError } = await supabase
-      .from("excuse_requests")
-      .insert({
-        organisation_id: selected.organisation_id,
-        member_id:       selectedId,
-        submitted_by:    selected.parent_phone ?? "Parent",
-        start_date:      form.start_date,
-        end_date:        form.end_date,
-        reason:          form.reason.trim(),
-        status:          "pending",
-      });
-
-    if (insertError) {
-      console.error("[excuse submission]", insertError.message);
-      setError(
-        insertError.message.toLowerCase().includes("row-level security") ||
-        insertError.message.toLowerCase().includes("policy")
-          ? "Submission blocked by school's security settings. Please contact the school office directly, or ask your admin to check excuse_requests RLS policies."
-          : "Failed to submit. Please try again."
-      );
-    } else {
-      // Push admins to let them know a new excuse came in — fire and forget
-      fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-push`, {
-        method:  "POST",
-        headers: {
-          "Content-Type":  "application/json",
-          "Authorization": `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-        },
+    try {
+      const res = await fetch("/api/portal/excuse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type:   "excuse_request",
-          org_id: selected.organisation_id,
-          title:  "New Excuse Request",
-          body:   `${selected.full_name}'s parent submitted an excuse request for review.`,
-          target: "admins",
+          studentId: selectedId,
+          startDate: form.start_date,
+          endDate:   form.end_date,
+          reason:    form.reason.trim(),
         }),
-      }).catch(() => {});
-      setSubmitted(true);
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        if (res.status === 401) {
+          sessionStorage.removeItem("parent_session");
+          router.push("/portal");
+          return;
+        }
+        setError(data.error ?? "Failed to submit. Please try again.");
+      } else {
+        setSubmitted(true);
+      }
+    } catch {
+      setError("Network error. Please try again.");
     }
     setLoading(false);
   }
