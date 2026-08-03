@@ -75,7 +75,11 @@ export async function POST(req: NextRequest) {
   // whose name was typed.
   const token = createParentSessionToken(phone, students.map((s) => s.id));
 
-  const res = NextResponse.json({ ok: true, students });
+  // Web (this browser) uses the httpOnly cookie automatically from here
+  // on. Mobile has no browser cookie jar, so it also gets the raw token
+  // back in the body — attendy-mobile stores it and sends it as
+  // `Authorization: Bearer <token>` on subsequent requests.
+  const res = NextResponse.json({ ok: true, students, token });
   res.cookies.set(PARENT_SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

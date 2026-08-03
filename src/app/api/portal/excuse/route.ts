@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
-import { verifyParentSessionToken, PARENT_SESSION_COOKIE } from "@/lib/parent-session";
+import { getParentSessionFromRequest } from "@/lib/parent-session";
 
 const adminSupabase = createAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,7 +9,7 @@ const adminSupabase = createAdminClient(
 );
 
 export async function POST(req: NextRequest) {
-  const session = verifyParentSessionToken(req.cookies.get(PARENT_SESSION_COOKIE)?.value);
+  const session = getParentSessionFromRequest(req);
   if (!session) {
     return NextResponse.json({ ok: false, error: "Session expired. Please log in again." }, { status: 401 });
   }

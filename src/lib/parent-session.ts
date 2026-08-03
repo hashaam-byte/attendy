@@ -56,3 +56,30 @@ export function verifyParentSessionToken(token: string | undefined | null): Pare
 
 export const PARENT_SESSION_COOKIE = COOKIE_NAME;
 export const PARENT_SESSION_MAX_AGE_SECONDS = SESSION_TTL_MS / 1000;
+
+/**
+ * Reads the parent session from wherever the caller put it:
+ *  - web (attendy portal pages): httpOnly cookie, set by verify-parent
+ *  - mobile (attendy-mobile): `Authorization: Bearer <token>` header,
+ *    since React Native doesn't manage cookies the way a browser does —
+ *    the app stores the token itself (AsyncStorage) after login and
+ *    sends it back on every request.
+ * Same signed token either way, just two ways to transport it.
+ */
+export function getParentSessionFromRequest(req: {
+  cookies: { get(name: string): { value: string } | undefined };
+  headers: { get(name: string): string | null };
+}): ParentSessionPayload | null {
+  const cookieToken = req.cookies.get(COOKIE_NAME)?.value;
+  if (cookieToken) {
+    const fromCookie = verifyParentSessionToken(cookieToken);
+    if (fromCookie) return fromCookie;
+  }
+
+  const authHeader = req.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    return verifyParentSessionToken(authHeader.slice("Bearer ".length));
+  }
+
+  return null;
+}
