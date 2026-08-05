@@ -36,6 +36,22 @@ export async function POST(req: NextRequest) {
 
   const settings = (org?.settings as any) ?? {};
 
+  // Master switch: schools that only want app/push notifications (no
+  // per-message Termii cost) can turn this off entirely in Settings.
+  // Defaults to true (enabled) so existing schools who never touched
+  // this setting keep working exactly as before — this is opt-out, not
+  // opt-in, to avoid silently breaking notifications for anyone.
+  //
+  // Also respects the existing per-type toggles (sms_on_arrival /
+  // sms_on_absence) — these were already present in the settings UI
+  // and saveable, but this route never actually checked them, so
+  // toggling them off had no effect. Fixed here.
+  const perTypeEnabled =
+    type === "arrival" ? settings.sms_on_arrival !== false :
+    type === "absence" ? settings.sms_on_absence !== false :
+    true; // no per-type toggle exists yet for "registration"
+  const smsEnabled = settings.sms_notifications_enabled !== false && perTypeEnabled;
+
   // Plan-gate check: only allow WhatsApp routing if BOTH the org enabled
   // it in settings AND their current plan actually includes the feature
   // AND Termii has approved their WhatsApp sender (whatsapp_enabled).
@@ -66,22 +82,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unknown type" }, { status: 400 });
   }
 
-  const result = await sendNotification({
-    to:          member.parent_phone,
-    message,
-    orgId:       org_id,
-    useWhatsApp,
-  });
+  const result = smsEnabled
+    ? await sendNotification({
+        to:          member.parent_phone,
+        message,
+        orgId:       org_id,
+        useWhatsApp,
+      })
+    : { ok: true, channel: "sms" as const, messageId: undefined, error: undefined };
 
   await serviceSupabase.from("notifications_log").insert({
     organisation_id:     org_id,
     member_id,
-    channel:             result.channel,
+    channel:             smsEnabled ? result.channel : "disabled",
     recipient:           member.parent_phone,
     message,
-    status:              result.ok ? "sent" : "failed",
+    status:              smsEnabled ? (result.ok ? "sent" : "failed") : "skipped_disabled",
     provider_message_id: result.messageId ?? null,
-    error_message:       result.ok ? null : result.error,
+    error_message:       smsEnabled ? (result.ok ? null : result.error) : null,
   });
 
   // ── Send push notification to parent (alongside SMS) ──────────
@@ -120,7 +138,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     success: result.ok,
-    channel: result.channel,
+    channel: smsEnabled ? result.channel : "disabled",
     error: result.error,
     whatsapp_plan_blocked: !planQualifies && settings.whatsapp_notifications === true,
   });

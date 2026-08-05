@@ -26,6 +26,7 @@ interface OrgSettings {
   school_days: number[];
   sms_on_arrival: boolean;
   sms_on_absence: boolean;
+  sms_notifications_enabled: boolean;
   absence_alert_time: string;
   welfare_alert_days: number;
   late_fee_enabled: boolean;
@@ -298,6 +299,7 @@ export function SettingsClient({ org, staff: initialStaff, classes, currentUserI
     school_days: rawSettings.school_days || [1, 2, 3, 4, 5],
     sms_on_arrival: rawSettings.sms_on_arrival ?? true,
     sms_on_absence: rawSettings.sms_on_absence ?? true,
+    sms_notifications_enabled: rawSettings.sms_notifications_enabled ?? true,
     absence_alert_time: rawSettings.absence_alert_time || "09:00",
     welfare_alert_days: rawSettings.welfare_alert_days ?? 3,
     late_fee_enabled: rawSettings.late_fee_enabled ?? false,
@@ -576,13 +578,29 @@ export function SettingsClient({ org, staff: initialStaff, classes, currentUserI
       {/* ── Notifications ── */}
       <Section title="Notifications & SMS" icon={<Bell size={15} style={{ color: "var(--accent)" }} />}>
         <div className="space-y-1 divide-y" style={{ borderColor: "var(--border)" }}>
-          <ToggleRow label="SMS on arrival" desc="Text parent when student scans in at the gate"
-            value={settings.sms_on_arrival} onChange={(v) => setSettings(s => ({ ...s, sms_on_arrival: v }))} />
-          <div className="pt-1">
+          <ToggleRow
+            label="SMS / WhatsApp notifications"
+            desc={settings.sms_notifications_enabled
+              ? "Master switch — turn off to stop all SMS/WhatsApp costs and use push notifications only."
+              : "Off — parents will only get in-app push notifications. No SMS/WhatsApp charges will be incurred."}
+            value={settings.sms_notifications_enabled}
+            onChange={(v) => setSettings(s => ({ ...s, sms_notifications_enabled: v }))}
+          />
+          <div className="pt-1" style={{ opacity: settings.sms_notifications_enabled ? 1 : 0.4, pointerEvents: settings.sms_notifications_enabled ? "auto" : "none" }}>
+            <ToggleRow label="SMS on arrival" desc="Text parent when student scans in at the gate"
+              value={settings.sms_on_arrival} onChange={(v) => setSettings(s => ({ ...s, sms_on_arrival: v }))} />
+          </div>
+          <div className="pt-1" style={{ opacity: settings.sms_notifications_enabled ? 1 : 0.4, pointerEvents: settings.sms_notifications_enabled ? "auto" : "none" }}>
             <ToggleRow label="SMS on absence" desc={`Text parent if student hasn't arrived by ${settings.absence_alert_time}`}
               value={settings.sms_on_absence} onChange={(v) => setSettings(s => ({ ...s, sms_on_absence: v }))} />
           </div>
         </div>
+        {!settings.sms_notifications_enabled && (
+          <p className="text-xs px-1" style={{ color: "var(--text-faint)" }}>
+            Note: this also applies to excuse-request approval texts and new-registration texts —
+            everything routes through this one switch. Push notifications (the phone app) are unaffected either way.
+          </p>
+        )}
 
         {settingsSaveError && (
           <div className="flex items-start gap-2 p-3 rounded-lg text-xs" style={{ background: "var(--status-danger-bg)", color: "var(--status-danger)" }}>

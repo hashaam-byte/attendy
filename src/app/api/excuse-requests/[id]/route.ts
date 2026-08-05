@@ -90,23 +90,26 @@ export async function PATCH(
         `(${dateRange}) has been approved. Attendance marked as excused.`;
 
       const settings = (org?.settings as any) ?? {};
+      const smsEnabled = settings.sms_notifications_enabled !== false;
       const useWhatsApp = (org?.whatsapp_enabled === true || settings.whatsapp_notifications === true)
         && hasFeature(org?.plan, "whatsappNotifications");
 
-      const result = await sendNotification({
-        to: member.parent_phone,
-        message,
-        orgId: orgUser.organisation_id,
-        useWhatsApp,
-      });
+      const result = smsEnabled
+        ? await sendNotification({
+            to: member.parent_phone,
+            message,
+            orgId: orgUser.organisation_id,
+            useWhatsApp,
+          })
+        : { ok: true, channel: "sms" as const, messageId: undefined, error: undefined };
 
       await adminSupabase.from("notifications_log").insert({
         organisation_id:     orgUser.organisation_id,
         member_id:           excuse.member_id,
-        channel:             result.channel,
+        channel:             smsEnabled ? result.channel : "disabled",
         recipient:           member.parent_phone,
         message,
-        status:              result.ok ? "sent" : "failed",
+        status:              smsEnabled ? (result.ok ? "sent" : "failed") : "skipped_disabled",
         provider_message_id: result.messageId ?? null,
         error_message:       result.ok ? null : result.error,
       });
