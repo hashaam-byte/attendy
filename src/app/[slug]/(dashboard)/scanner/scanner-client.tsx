@@ -370,7 +370,7 @@ export function ScannerClient({
       if (navigator.onLine) {
         try {
           const { data } = await supabase
-          .rpc("get_org_roster_for_scan", { organisation_id: orgId });
+          .rpc("get_org_roster_for_scan", { p_org_id: orgId });
           if (data) {
             setCachedMembers(data as CachedMember[]);
             // Also grab today's scans to keep the offline ledger current
@@ -410,13 +410,11 @@ export function ScannerClient({
     for (const { key, value } of queued) {
       try {
         const { error } = await supabase.rpc("submit_scan", {
-          organisation_id: value.organisation_id,
-          member_id:       value.member_id,
-          scan_type:       value.scan_type,
-          status:          value.status,
-          late_reason:     value.late_reason,
-          device_id:       value.device_id,
-          scanned_at:      value.scanned_at,
+          p_org_id:     value.organisation_id,
+          p_member_id:  value.member_id,
+          p_scan_type:  value.scan_type,
+          p_status:     value.status,
+          p_late_reason: value.late_reason,
         });
         if (!error) await deleteQueuedScan(key);
       } catch {}
@@ -484,7 +482,7 @@ export function ScannerClient({
       let member: CachedMember | null = cachedMembers.find((m) => m.qr_code === qrCode) ?? null;
       if (!member && isOnline) {
         const { data } = await supabase
-          .rpc("get_member_by_qr", { organisation_id: orgId, qr_code: qrCode })
+          .rpc("get_member_by_qr", { p_org_id: orgId, p_qr_code: qrCode })
           .maybeSingle();
         member = data as CachedMember | null;
       }
@@ -520,22 +518,23 @@ export function ScannerClient({
 
       // 3. Server duplicate check (online only)
       if (isOnline) {
-        const todayStart = new Date().toISOString().split("T")[0];
-        const { data: existing, error: duplicateError } = await supabase
+        const { data: existingScannedAt, error: duplicateError } = await supabase
           .rpc("check_duplicate_scan", {
-            organisation_id: orgId,
-            member_id:       member.id,
-            scan_type:       scanMode,
-            from_scanned_at: `${todayStart}T00:00:00`,
+            p_org_id:    orgId,
+            p_member_id: member.id,
+            p_scan_type: scanMode,
           });
+        // Note: this function returns a bare timestamp (or null), not a
+        // row — it always checks "today" in the database's own clock/
+        // timezone (CURRENT_DATE), not the browser's local date. That's
+        // usually fine but can differ by a few hours right around
+        // midnight if the device and DB are in different timezones.
 
         if (duplicateError) throw duplicateError;
 
-        const existingRecord = Array.isArray(existing) ? existing[0] : existing as any;
-
-        if (existingRecord) {
+        if (existingScannedAt) {
           await ledgerSet(orgId, member.id, scanMode, {
-            scanned_at: existingRecord.scanned_at,
+            scanned_at: existingScannedAt,
             name: member.full_name,
             status: scanMode === "exit" ? "early_exit" : "present",
             mode: scanMode,
@@ -547,7 +546,7 @@ export function ScannerClient({
             name:      member.full_name,
             className: member.class_name ?? undefined,
             time:      new Date().toLocaleTimeString(),
-            message:   `Already ${scanMode === "exit" ? "exited" : "scanned"} today at ${formatTime(existingRecord.scanned_at)}`,
+            message:   `Already ${scanMode === "exit" ? "exited" : "scanned"} today at ${formatTime(existingScannedAt)}`,
           });
           setProcessing(false); clearResult(); return;
         }
@@ -608,13 +607,11 @@ export function ScannerClient({
 
     if (isOnline) {
       const { error } = await supabase.rpc("submit_scan", {
-        organisation_id: scanData.organisation_id,
-        member_id:       scanData.member_id,
-        scan_type:       scanData.scan_type,
-        status:          scanData.status,
-        late_reason:     scanData.late_reason,
-        device_id:       scanData.device_id,
-        scanned_at:      scanData.scanned_at,
+        p_org_id:     scanData.organisation_id,
+        p_member_id:  scanData.member_id,
+        p_scan_type:  scanData.scan_type,
+        p_status:     scanData.status,
+        p_late_reason: scanData.late_reason,
       });
 
       if (error) {
