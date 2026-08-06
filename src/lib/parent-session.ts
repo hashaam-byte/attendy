@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 
 const COOKIE_NAME = "attendy_parent_session";
-const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes, matches old client TTL
+const SESSION_TTL_MS = 60 * 24 * 60 * 60 * 1000; // 60 days — "stay logged in until you log out yourself"
 
 export interface ParentSessionPayload {
   phone: string;
