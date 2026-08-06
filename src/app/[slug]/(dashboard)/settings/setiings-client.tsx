@@ -52,6 +52,16 @@ interface Props {
   classes: string[];
   currentUserId: string;
   slug: string;
+  planAuditLog: {
+    id: string;
+    changed_at: string;
+    old_plan: string | null;
+    new_plan: string | null;
+    old_expires_at: string | null;
+    new_expires_at: string | null;
+    notes: string | null;
+  }[];
+  smsSentThisMonth: number;
 }
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -288,7 +298,7 @@ function AddStaffModal({ orgId, orgSlug, onClose, onAdded }: {
 }
 
 // ── Main SettingsClient ────────────────────────────────────────
-export function SettingsClient({ org, staff: initialStaff, classes, currentUserId, slug }: Props) {
+export function SettingsClient({ org, staff: initialStaff, classes, currentUserId, slug, planAuditLog, smsSentThisMonth }: Props) {
   const supabase = createClient();
   const router = useRouter();
 
@@ -577,6 +587,14 @@ export function SettingsClient({ org, staff: initialStaff, classes, currentUserI
 
       {/* ── Notifications ── */}
       <Section title="Notifications & SMS" icon={<Bell size={15} style={{ color: "var(--accent)" }} />}>
+        <div className="flex items-center justify-between px-1 pb-2">
+          <p className="text-xs" style={{ color: "var(--text-faint)" }}>
+            SMS/WhatsApp sent this month
+          </p>
+          <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+            {smsSentThisMonth.toLocaleString()}
+          </p>
+        </div>
         <div className="space-y-1 divide-y" style={{ borderColor: "var(--border)" }}>
           <ToggleRow
             label="SMS / WhatsApp notifications"
@@ -762,6 +780,35 @@ export function SettingsClient({ org, staff: initialStaff, classes, currentUserI
           Upgrade Plan on WhatsApp →
         </a>
       </Section>
+
+      {/* ── Plan History ── */}
+      {planAuditLog.length > 0 && (
+        <Section title="Plan History" icon={<Clock size={15} style={{ color: "var(--accent)" }} />}>
+          <div className="space-y-2">
+            {planAuditLog.map((entry) => (
+              <div key={entry.id} className="flex items-start gap-3 p-3 rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--bg-subtle)" }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm" style={{ color: "var(--text-primary)" }}>
+                    {entry.old_plan && entry.new_plan && entry.old_plan !== entry.new_plan ? (
+                      <>Plan changed from <span className="capitalize font-semibold">{entry.old_plan}</span> to <span className="capitalize font-semibold">{entry.new_plan}</span></>
+                    ) : entry.new_expires_at && entry.old_expires_at !== entry.new_expires_at ? (
+                      <>Expiry date updated to <span className="font-semibold">{formatDate(entry.new_expires_at)}</span></>
+                    ) : (
+                      <>Plan details updated</>
+                    )}
+                  </p>
+                  {entry.notes && (
+                    <p className="text-xs mt-0.5" style={{ color: "var(--text-faint)" }}>{entry.notes}</p>
+                  )}
+                </div>
+                <span className="text-[11px] shrink-0" style={{ color: "var(--text-faint)" }}>
+                  {formatDate(entry.changed_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
 
       {/* ── Staff Accounts ── */}
       <Section title="Staff Accounts" icon={<Users size={15} style={{ color: "var(--accent)" }} />}>

@@ -72,6 +72,7 @@ export default async function SettingsPage({
     { data: staffRows },
     { data: classRows },
     { data: assignmentRows },
+    { data: planAuditRows },
   ] = await Promise.all([
     supabase.from("organisations").select("*").eq("id", orgId).single(),
 
@@ -91,7 +92,27 @@ export default async function SettingsPage({
     supabase.from("class_assignments")
       .select("org_user_id, class_name")
       .eq("organisation_id", orgId),
+
+    // Plan change history — RLS (org_admin_read_own_plan_audit) already
+    // scopes this to the caller's own org, so no extra filtering needed
+    // beyond confirming they're an admin, which this branch already did.
+    supabase.from("plan_audit_log")
+      .select("id, changed_at, old_plan, new_plan, old_expires_at, new_expires_at, notes")
+      .eq("organisation_id", orgId)
+      .order("changed_at", { ascending: false })
+      .limit(20),
   ]);
+
+  // SMS/WhatsApp usage this calendar month — gives the admin a concrete
+  // number to weigh against the on/off toggle, not just an abstract choice.
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const { count: smsSentThisMonth } = await supabase
+    .from("notifications_log")
+    .select("id", { count: "exact", head: true })
+    .eq("organisation_id", orgId)
+    .in("channel", ["sms", "whatsapp"])
+    .eq("status", "sent")
+    .gte("created_at", monthStart.toISOString());
 
   // Build unique sorted class list
   const uniqueClasses = [...new Set(
@@ -123,6 +144,8 @@ export default async function SettingsPage({
       classes={uniqueClasses}
       currentUserId={user.id}
       slug={slug}
+      planAuditLog={planAuditRows ?? []}
+      smsSentThisMonth={smsSentThisMonth ?? 0}
     />
   );
 }

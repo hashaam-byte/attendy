@@ -44,6 +44,8 @@ interface Props {
   chartData: DayData[];
   classes:   string[];
   slug:      string;
+  trendSeries:   { date: string; pct: number }[];
+  classAverages: { className: string; avgPct: number }[];
 }
 
 // ── Daily tab ────────────────────────────────────────────────
@@ -430,9 +432,93 @@ function TermReportTab({ orgId, classes }: { orgId: string; classes: string[] })
   );
 }
 
+// ── Trends tab (30-day attendance %, per-class comparison) ─────
+function TrendsTab({
+  trendSeries, classAverages,
+}: {
+  trendSeries:   { date: string; pct: number }[];
+  classAverages: { className: string; avgPct: number }[];
+}) {
+  const width = 640, height = 160, pad = 8;
+  const points = trendSeries.map((d, i) => {
+    const x = pad + (i / (trendSeries.length - 1)) * (width - pad * 2);
+    const y = height - pad - (d.pct / 100) * (height - pad * 2);
+    return { x, y, pct: d.pct, date: d.date };
+  });
+  const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  const areaD = `${pathD} L ${points[points.length - 1].x.toFixed(1)} ${height - pad} L ${points[0].x.toFixed(1)} ${height - pad} Z`;
+
+  const avgOverall = trendSeries.length
+    ? Math.round(trendSeries.reduce((a, d) => a + d.pct, 0) / trendSeries.length)
+    : 0;
+  const firstHalf  = trendSeries.slice(0, 15).reduce((a, d) => a + d.pct, 0) / 15;
+  const secondHalf = trendSeries.slice(15).reduce((a, d) => a + d.pct, 0) / 15;
+  const direction = secondHalf - firstHalf;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="card p-4">
+          <p className="text-xs mb-1" style={{ color: "var(--text-faint)" }}>30-day average attendance</p>
+          <p className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>{avgOverall}%</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs mb-1" style={{ color: "var(--text-faint)" }}>Trend (first 15 vs last 15 days)</p>
+          <p className="text-xl font-bold flex items-center gap-1.5" style={{ color: direction >= 0 ? "var(--status-success)" : "var(--status-danger)" }}>
+            <TrendingUp size={16} style={{ transform: direction < 0 ? "scaleY(-1)" : undefined }} />
+            {direction >= 0 ? "+" : ""}{Math.round(direction)}%
+          </p>
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <p className="text-sm font-semibold mb-3" style={{ color: "var(--text)" }}>Last 30 days</p>
+        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto" }}>
+          <defs>
+            <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {[0, 25, 50, 75, 100].map((v) => (
+            <line key={v} x1={pad} x2={width - pad}
+              y1={height - pad - (v / 100) * (height - pad * 2)} y2={height - pad - (v / 100) * (height - pad * 2)}
+              stroke="var(--border)" strokeWidth={1} strokeDasharray="3,3" />
+          ))}
+          <path d={areaD} fill="url(#trendFill)" />
+          <path d={pathD} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        </svg>
+        <div className="flex justify-between text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+          <span>{formatDate(trendSeries[0]?.date)}</span>
+          <span>{formatDate(trendSeries[trendSeries.length - 1]?.date)}</span>
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <p className="text-sm font-semibold mb-3" style={{ color: "var(--text)" }}>By class (30-day average)</p>
+        {classAverages.length === 0 ? (
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>No class data yet.</p>
+        ) : (
+          <div className="space-y-2.5">
+            {classAverages.map(({ className, avgPct }) => (
+              <div key={className} className="flex items-center gap-3">
+                <span className="text-sm w-24 shrink-0 truncate" style={{ color: "var(--text)" }}>{className}</span>
+                <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-subtle)" }}>
+                  <div className="h-full rounded-full" style={{ width: `${Math.min(avgPct, 100)}%`, background: "var(--accent)" }} />
+                </div>
+                <span className="text-sm font-medium w-10 text-right" style={{ color: "var(--text)" }}>{avgPct}%</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main export ───────────────────────────────────────────────
-export function ReportsClient({ orgId, todayLogs, chartData, classes }: Props) {
-  const [activeTab, setActiveTab] = useState<"daily" | "term">("daily");
+export function ReportsClient({ orgId, todayLogs, chartData, classes, trendSeries, classAverages }: Props) {
+  const [activeTab, setActiveTab] = useState<"daily" | "trends" | "term">("daily");
 
   return (
     <div className="space-y-5 max-w-5xl">
@@ -442,20 +528,23 @@ export function ReportsClient({ orgId, todayLogs, chartData, classes }: Props) {
       </div>
 
       <div className="flex gap-2">
-        {(["daily", "term"] as const).map((tab) => (
+        {(["daily", "trends", "term"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className="px-4 py-2 rounded-lg text-sm font-medium transition-all capitalize"
             style={activeTab === tab ? { background: "var(--accent)", color: "white" } : { color: "var(--text-muted)" }}
           >
-            {tab === "daily" ? "Today / 7-day" : "Term Report"}
+            {tab === "daily" ? "Today / 7-day" : tab === "trends" ? "Trends" : "Term Report"}
           </button>
         ))}
       </div>
 
       {activeTab === "daily" && (
         <DailyTab todayLogs={todayLogs} chartData={chartData} classes={classes} />
+      )}
+      {activeTab === "trends" && (
+        <TrendsTab trendSeries={trendSeries} classAverages={classAverages} />
       )}
       {activeTab === "term" && (
         <TermReportTab orgId={orgId} classes={classes} />
