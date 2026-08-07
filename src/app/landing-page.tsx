@@ -331,7 +331,6 @@ interface LandingPageProps {
 
 export default function LandingPage({ prices, limits }: LandingPageProps) {
   const router = useRouter();
-  const apkUrl = process.env.NEXT_PUBLIC_ANDROID_APK_URL;
   const PLANS = buildPlans(prices, limits);
 
   // Hero entrance
@@ -1215,12 +1214,10 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
               <button className="atd-btn-ghost" onClick={() => setShowModal(true)}>
                 Staff Login <ArrowRight size={14} />
               </button>
-              {apkUrl && (
-                <a className="atd-btn-download" href={apkUrl} download>
-                  <Download size={16} />
-                  Download for Android
-                </a>
-              )}
+              <a className="atd-btn-download" href="/download">
+                <Download size={16} />
+                Download for Android
+              </a>
             </div>
 
             <div className="atd-trust-row" style={s(560)}>
@@ -1591,7 +1588,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
                 <div className="atd-footer-col-title">Access</div>
                 <a href="/portal" className="atd-footer-link">Parent Portal</a>
                 <button className="atd-footer-link" onClick={() => setShowModal(true)}>Staff Login</button>
-                {apkUrl && <a href={apkUrl} download className="atd-footer-link">Download Android App</a>}
+                <a href="/download" className="atd-footer-link">Download Android App</a>
               </div>
             </div>
           </div>
