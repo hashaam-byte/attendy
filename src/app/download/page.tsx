@@ -2,9 +2,25 @@ import { Smartphone, Download, AlertCircle, Apple, ShieldCheck } from "lucide-re
 
 export const revalidate = 3600; // re-check GitHub for a new release once an hour
 
-const DEFAULT_REPO = "hashaam-byte/attendy-mobile";
-const REPO = process.env.NEXT_PUBLIC_GITHUB_RELEASE_REPO || DEFAULT_REPO;
+const REPO_URL = process.env.NEXT_PUBLIC_GITHUB_RELEASE_REPO;
+const REPO = REPO_URL ? parseGithubRepoPath(REPO_URL) : null;
+const REPO_LINK = REPO_URL ?? (REPO ? `https://github.com/${REPO}` : null);
+const REPO_LABEL = REPO ? `github.com/${REPO}` : REPO_URL ?? "GitHub";
 const FALLBACK_ANDROID_APK_URL = process.env.NEXT_PUBLIC_ANDROID_APK_URL;
+
+function parseGithubRepoPath(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (!/^github\.com$/i.test(url.hostname)) return null;
+    const path = url.pathname.replace(/^\/|\/$/g, "");
+    const [owner, repo] = path.split("/");
+    return owner && repo ? `${owner}/${repo}` : null;
+  } catch {
+    const path = value.replace(/^\/|\/$/g, "");
+    const parts = path.split("/");
+    return parts.length === 2 ? path : null;
+  }
+}
 
 interface ReleaseAsset {
   name: string;
@@ -21,6 +37,8 @@ interface Release {
 }
 
 async function getLatestRelease(): Promise<Release | null> {
+  if (!REPO) return null;
+
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
       next: { revalidate: 3600 },
@@ -93,8 +111,8 @@ export default async function DownloadPage() {
                 <p>
                   {apkAsset ? (
                     <>Downloaded directly from our GitHub repository — the same source code you can inspect at{" "}
-                      <a href={`https://github.com/${REPO}`} target="_blank" rel="noopener noreferrer" className="underline">
-                        github.com/{REPO}
+                      <a href={REPO_LINK ?? `https://github.com/${REPO}`} target="_blank" rel="noopener noreferrer" className="underline">
+                        {REPO_LABEL}
                       </a>. Not from a third-party file host.</>
                   ) : (
                     <>Download link configured from environment settings. If you want GitHub release downloads instead, set <code>NEXT_PUBLIC_GITHUB_RELEASE_REPO</code> and publish a .apk asset there.</>
