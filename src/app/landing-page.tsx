@@ -5,13 +5,49 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import {
   GraduationCap, QrCode, Bell, BarChart3, Users, CheckCircle,
   ArrowRight, Smartphone, Zap, Search, Loader2,
   Wifi, MessageCircle, X, ChevronDown, ChevronUp, Shield, Clock,
-  Download, Calculator,
+  Download, Calculator, Sun, Moon, Monitor, Menu,
 } from "lucide-react";
 import Image from "next/image";
+
+// ─────────────────────────────────────────────────────────────
+// Theme toggle — light / dark / system, matches the app's
+// existing next-themes setup (attribute="class") used everywhere else.
+// ─────────────────────────────────────────────────────────────
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const options: { value: string; icon: typeof Sun; label: string }[] = [
+    { value: "light",  icon: Sun,     label: "Light" },
+    { value: "dark",   icon: Moon,    label: "Dark" },
+    { value: "system", icon: Monitor, label: "System" },
+  ];
+
+  return (
+    <div className="atd-theme-toggle" role="radiogroup" aria-label="Theme">
+      {options.map(({ value, icon: Icon, label }) => (
+        <button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={mounted && theme === value}
+          aria-label={label}
+          title={label}
+          className={`atd-theme-btn ${mounted && theme === value ? "atd-theme-btn-active" : ""}`}
+          onClick={() => setTheme(value)}
+        >
+          <Icon size={13} />
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────
 // 0.  TYPING ENGINE  (self-contained, no deps)
@@ -291,7 +327,7 @@ function PriceCalculator({ prices, limits }: { prices: PriceMap; limits: LimitMa
               className="atd-calc-chip"
               style={{
                 background: isRec ? "rgba(34,197,94,0.1)" : "transparent",
-                borderColor: isRec ? "#16a34a" : "rgba(255,255,255,0.07)",
+                borderColor: isRec ? "#16a34a" : "rgba(var(--land-fg-rgb),0.07)",
                 opacity: fits ? 1 : 0.35,
               }}
             >
@@ -349,6 +385,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
   const [checking,  setChecking]  = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Scroll reveals
   const howRev      = useReveal();
@@ -386,12 +423,31 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
 
       {/* ── Global styles ───────────────────────────────────── */}
       <style>{`
+        /* ── Theme tokens ──────────────────────────────────────────
+           Dark is the existing look (unchanged values, just now named).
+           Light is new. Green accent is intentionally IDENTICAL in both
+           themes — it's the one constant across the whole product. */
+        :root {
+          --land-bg: #f6faf7;
+          --land-bg-elevated: #ffffff;
+          --land-bg-rgb: 246,250,247;
+          --land-fg-rgb: 8,26,17;
+          --land-text-solid: #071409;
+        }
+        .dark {
+          --land-bg: #030b05;
+          --land-bg-elevated: #071208;
+          --land-bg-rgb: 3,11,5;
+          --land-fg-rgb: 255,255,255;
+          --land-text-solid: #ffffff;
+        }
+
         @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=DM+Sans:wght@400;500&display=swap');
 
         .atd-root {
           min-height: 100vh;
-          background: #030b05;
-          color: #fff;
+          background: var(--land-bg);
+          color: var(--land-text-solid);
           font-family: 'DM Sans', system-ui, sans-serif;
           overflow-x: hidden;
         }
@@ -461,13 +517,13 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           100% { transform: scale(2.4); opacity: 0; }
         }
         .atd-live-num   { font-weight: 700; color: #4ade80; }
-        .atd-live-label { color: rgba(255,255,255,0.4); }
+        .atd-live-label { color: rgba(var(--land-fg-rgb),0.4); }
 
         /* Nav */
         .atd-nav {
           position: sticky; top: 0; z-index: 50;
-          border-bottom: 1px solid rgba(255,255,255,0.05);
-          background: rgba(3,11,5,0.85);
+          border-bottom: 1px solid rgba(var(--land-fg-rgb),0.05);
+          background: rgba(var(--land-bg-rgb),0.85);
           backdrop-filter: blur(18px);
           -webkit-backdrop-filter: blur(18px);
         }
@@ -498,7 +554,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         }
         .atd-nav-links {
           display: flex; align-items: center; gap: 28px;
-          font-size: 13px; color: rgba(255,255,255,0.38);
+          font-size: 13px; color: rgba(var(--land-fg-rgb),0.38);
         }
         .atd-nav-links a { text-decoration: none; transition: color 0.15s; }
         .atd-nav-links a:hover { color: #4ade80; }
@@ -510,6 +566,26 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           transition: background 0.15s, transform 0.12s;
         }
         .atd-nav-btn:hover { background: #15803d; transform: translateY(-1px); }
+
+        .atd-nav-actions { display: flex; align-items: center; gap: 10px; }
+        .atd-theme-toggle {
+          display: flex; align-items: center; gap: 2px;
+          padding: 3px; border-radius: 10px;
+          background: rgba(var(--land-fg-rgb),0.05);
+          border: 1px solid rgba(var(--land-fg-rgb),0.08);
+        }
+        .atd-theme-btn {
+          display: flex; align-items: center; justify-content: center;
+          width: 26px; height: 26px; border-radius: 7px;
+          background: transparent; border: none; cursor: pointer;
+          color: rgba(var(--land-fg-rgb),0.45);
+          transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+        }
+        .atd-theme-btn:hover { color: rgba(var(--land-fg-rgb),0.8); }
+        .atd-theme-btn-active {
+          background: rgba(34,197,94,0.15); color: #4ade80;
+        }
+        .atd-theme-btn-active:hover { color: #4ade80; }
 
         /* Hero */
         .atd-hero {
@@ -529,6 +605,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           .atd-hero-img-col { display: none; }
         }
         .atd-hero-tag {
+          position: relative; overflow: hidden;
           display: inline-flex; align-items: center; gap: 6px;
           font-size: 11px; font-weight: 700; text-transform: uppercase;
           letter-spacing: 0.07em; color: #4ade80;
@@ -537,19 +614,29 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           border-radius: 100px; padding: 5px 14px;
           margin-bottom: 1.25rem;
         }
+        .atd-hero-tag::after {
+          content: ''; position: absolute; top: 0; left: -30%;
+          width: 30%; height: 100%;
+          background: linear-gradient(90deg, transparent, rgba(74,222,128,0.35), transparent);
+          animation: atdScanSweep 3.4s ease-in-out infinite;
+        }
+        @keyframes atdScanSweep {
+          0%, 15%  { left: -30%; }
+          55%, 100% { left: 110%; }
+        }
         .atd-h1 {
           font-family: 'Bricolage Grotesque', sans-serif;
           font-size: clamp(2.1rem,4.5vw,3.6rem);
           font-weight: 800;
           line-height: 1.07;
           letter-spacing: -0.025em;
-          color: #fff;
+          color: var(--land-text-solid);
           min-height: 4.6rem;
           margin-bottom: 1.25rem;
         }
         .atd-hero-sub {
           font-size: 15px;
-          color: rgba(255,255,255,0.42);
+          color: rgba(var(--land-fg-rgb),0.42);
           line-height: 1.7;
           max-width: 420px;
           margin-bottom: 2rem;
@@ -576,20 +663,20 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         .atd-btn-ghost {
           display: inline-flex; align-items: center; gap: 8px;
           padding: 13px 22px; border-radius: 14px;
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.10);
-          color: rgba(255,255,255,0.6);
+          background: rgba(var(--land-fg-rgb),0.04);
+          border: 1px solid rgba(var(--land-fg-rgb),0.10);
+          color: rgba(var(--land-fg-rgb),0.6);
           font-weight: 600; font-size: 15px;
           cursor: pointer; transition: background 0.15s;
           font-family: inherit;
         }
-        .atd-btn-ghost:hover { background: rgba(255,255,255,0.08); }
+        .atd-btn-ghost:hover { background: rgba(var(--land-fg-rgb),0.08); }
         .atd-trust-row {
           display: flex; flex-wrap: wrap; gap: 16px 20px;
         }
         .atd-trust-item {
           display: flex; align-items: center; gap: 6px;
-          font-size: 12px; color: rgba(255,255,255,0.28);
+          font-size: 12px; color: rgba(var(--land-fg-rgb),0.28);
         }
 
         /* Hero image column */
@@ -599,12 +686,12 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         .atd-hero-img-frame {
           position: absolute; inset: 0;
           border-radius: 32px; overflow: hidden;
-          border: 1px solid rgba(255,255,255,0.07);
+          border: 1px solid rgba(var(--land-fg-rgb),0.07);
           transform: rotate(0.8deg);
         }
         .atd-hero-img-overlay {
           position: absolute; inset: 0;
-          background: linear-gradient(to top, rgba(3,11,5,0.6), transparent 55%);
+          background: linear-gradient(to top, rgba(var(--land-bg-rgb),0.6), transparent 55%);
         }
         .atd-chip {
           position: absolute;
@@ -630,10 +717,10 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           text-transform: uppercase; letter-spacing: 0.08em;
           margin-bottom: 4px;
         }
-        .atd-chip-scan-name { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 2px; }
+        .atd-chip-scan-name { font-size: 13px; font-weight: 600; color: var(--land-text-solid); margin-bottom: 2px; }
         .atd-chip-scan-sub  { font-size: 11px; color: #4ade80; }
         .atd-chip-stat-num  { font-size: 26px; font-weight: 800; color: #4ade80; line-height: 1; }
-        .atd-chip-stat-lbl  { font-size: 10px; color: rgba(255,255,255,0.38); margin-top: 3px; }
+        .atd-chip-stat-lbl  { font-size: 10px; color: rgba(var(--land-fg-rgb),0.38); margin-top: 3px; }
 
         /* Before/after strip */
         .atd-ba-wrap {
@@ -642,12 +729,12 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         .atd-ba-grid {
           display: grid; grid-template-columns: 1fr 1fr;
           border-radius: 20px;
-          border: 1px solid rgba(255,255,255,0.06);
+          border: 1px solid rgba(var(--land-fg-rgb),0.06);
           overflow: hidden;
         }
         @media(max-width:640px){ .atd-ba-grid { grid-template-columns: 1fr; } }
         .atd-ba-col { padding: 2rem; }
-        .atd-ba-col:first-child { border-right: 1px solid rgba(255,255,255,0.06); }
+        .atd-ba-col:first-child { border-right: 1px solid rgba(var(--land-fg-rgb),0.06); }
         .atd-ba-tag {
           font-size: 10px; font-weight: 700; text-transform: uppercase;
           letter-spacing: 0.1em; margin-bottom: 1.2rem;
@@ -657,13 +744,13 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           display: flex; align-items: flex-start; gap: 10px;
           margin-bottom: 12px; font-size: 13px;
         }
-        .atd-ba-row--bad  { color: rgba(255,255,255,0.35); }
-        .atd-ba-row--good { color: rgba(255,255,255,0.75); }
+        .atd-ba-row--bad  { color: rgba(var(--land-fg-rgb),0.35); }
+        .atd-ba-row--good { color: rgba(var(--land-fg-rgb),0.75); }
 
         /* Social proof strip */
         .atd-proof-strip {
-          border-top: 1px solid rgba(255,255,255,0.05);
-          border-bottom: 1px solid rgba(255,255,255,0.05);
+          border-top: 1px solid rgba(var(--land-fg-rgb),0.05);
+          border-bottom: 1px solid rgba(var(--land-fg-rgb),0.05);
           background: rgba(22,163,74,0.04);
           padding: 14px 0;
         }
@@ -674,9 +761,9 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         }
         .atd-proof-item {
           display: flex; align-items: center; gap: 8px;
-          font-size: 13px; color: rgba(255,255,255,0.32);
+          font-size: 13px; color: rgba(var(--land-fg-rgb),0.32);
         }
-        .atd-proof-item strong { color: rgba(255,255,255,0.7); }
+        .atd-proof-item strong { color: rgba(var(--land-fg-rgb),0.7); }
 
         /* Section shell */
         .atd-section {
@@ -696,10 +783,10 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           font-family: 'Bricolage Grotesque', sans-serif;
           font-size: clamp(1.8rem,3.5vw,2.6rem);
           font-weight: 800; letter-spacing: -0.02em;
-          color: #fff; margin-bottom: 10px;
+          color: var(--land-text-solid); margin-bottom: 10px;
         }
         .atd-section-sub {
-          font-size: 14px; color: rgba(255,255,255,0.38);
+          font-size: 14px; color: rgba(var(--land-fg-rgb),0.38);
         }
         .atd-section-head { text-align: center; margin-bottom: 3.5rem; }
 
@@ -713,7 +800,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         @media(max-width:768px){ .atd-step { grid-template-columns: 1fr; } }
         .atd-step-img {
           border-radius: 24px; overflow: hidden;
-          border: 1px solid rgba(255,255,255,0.07);
+          border: 1px solid rgba(var(--land-fg-rgb),0.07);
           aspect-ratio: 4/3; position: relative;
         }
         .atd-step-num {
@@ -726,10 +813,10 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         .atd-step-title {
           font-family: 'Bricolage Grotesque', sans-serif;
           font-size: 22px; font-weight: 700;
-          color: #fff; margin-bottom: 12px;
+          color: var(--land-text-solid); margin-bottom: 12px;
         }
         .atd-step-body {
-          font-size: 15px; color: rgba(255,255,255,0.45);
+          font-size: 15px; color: rgba(var(--land-fg-rgb),0.45);
           line-height: 1.7; margin-bottom: 18px;
         }
         .atd-pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -748,12 +835,12 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         }
         .atd-feature-card {
           padding: 22px; border-radius: 20px;
-          border: 1px solid rgba(255,255,255,0.06);
-          background: rgba(255,255,255,0.015);
+          border: 1px solid rgba(var(--land-fg-rgb),0.06);
+          background: rgba(var(--land-fg-rgb),0.015);
           transition: background 0.2s, transform 0.2s;
         }
         .atd-feature-card:hover {
-          background: rgba(255,255,255,0.03);
+          background: rgba(var(--land-fg-rgb),0.03);
           transform: translateY(-2px);
         }
         .atd-feature-icon {
@@ -762,10 +849,10 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           margin-bottom: 14px;
         }
         .atd-feature-title {
-          font-weight: 600; font-size: 15px; color: #fff; margin-bottom: 6px;
+          font-weight: 600; font-size: 15px; color: var(--land-text-solid); margin-bottom: 6px;
         }
         .atd-feature-desc {
-          font-size: 13px; color: rgba(255,255,255,0.4); line-height: 1.6;
+          font-size: 13px; color: rgba(var(--land-fg-rgb),0.4); line-height: 1.6;
         }
 
         /* Testimonials */
@@ -776,14 +863,14 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         @media(max-width:640px){ .atd-testi-grid { grid-template-columns: 1fr; } }
         .atd-testi-card {
           padding: 28px; border-radius: 20px;
-          border: 1px solid rgba(255,255,255,0.07);
-          background: rgba(255,255,255,0.015);
+          border: 1px solid rgba(var(--land-fg-rgb),0.07);
+          background: rgba(var(--land-fg-rgb),0.015);
           display: flex; flex-direction: column; gap: 18px;
         }
         .atd-stars { display: flex; gap: 2px; }
         .atd-star { color: #22c55e; font-size: 13px; }
         .atd-testi-body {
-          font-size: 14px; color: rgba(255,255,255,0.55);
+          font-size: 14px; color: rgba(var(--land-fg-rgb),0.55);
           line-height: 1.7; flex: 1; font-style: italic;
         }
         .atd-testi-footer { display: flex; align-items: center; gap: 12px; }
@@ -792,8 +879,8 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           display: flex; align-items: center; justify-content: center;
           font-size: 12px; font-weight: 700; flex-shrink: 0;
         }
-        .atd-testi-name { font-size: 14px; font-weight: 600; color: #fff; }
-        .atd-testi-role { font-size: 12px; color: rgba(255,255,255,0.3); }
+        .atd-testi-name { font-size: 14px; font-weight: 600; color: var(--land-text-solid); }
+        .atd-testi-role { font-size: 12px; color: rgba(var(--land-fg-rgb),0.3); }
 
         /* Pricing */
         .atd-plan-grid {
@@ -803,8 +890,8 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         }
         .atd-plan {
           padding: 24px; border-radius: 20px;
-          border: 1px solid rgba(255,255,255,0.07);
-          background: rgba(255,255,255,0.02);
+          border: 1px solid rgba(var(--land-fg-rgb),0.07);
+          background: rgba(var(--land-fg-rgb),0.02);
           position: relative;
           transition: transform 0.15s;
         }
@@ -821,23 +908,23 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           padding: 3px 12px; border-radius: 100px;
           white-space: nowrap;
         }
-        .atd-plan-name { font-weight: 700; color: #fff; margin-bottom: 6px; font-size: 15px; }
+        .atd-plan-name { font-weight: 700; color: var(--land-text-solid); margin-bottom: 6px; font-size: 15px; }
         .atd-plan-price {
           font-family: 'Bricolage Grotesque', sans-serif;
-          font-size: 28px; font-weight: 800; color: #fff;
+          font-size: 28px; font-weight: 800; color: var(--land-text-solid);
           letter-spacing: -0.03em; line-height: 1;
         }
-        .atd-plan-period { font-size: 11px; color: rgba(255,255,255,0.3); margin-left: 4px; }
+        .atd-plan-period { font-size: 11px; color: rgba(var(--land-fg-rgb),0.3); margin-left: 4px; }
         .atd-plan-divider {
-          border: none; border-top: 1px solid rgba(255,255,255,0.07);
+          border: none; border-top: 1px solid rgba(var(--land-fg-rgb),0.07);
           margin: 16px 0;
         }
         .atd-plan-row {
           display: flex; justify-content: space-between;
           font-size: 12px; margin-bottom: 8px;
         }
-        .atd-plan-row-label { color: rgba(255,255,255,0.38); }
-        .atd-plan-row-val   { color: #fff; font-weight: 600; font-family: monospace; }
+        .atd-plan-row-label { color: rgba(var(--land-fg-rgb),0.38); }
+        .atd-plan-row-val   { color: var(--land-text-solid); font-weight: 600; font-family: monospace; }
         .atd-plan-cta {
           display: block; text-align: center; text-decoration: none;
           padding: 10px; border-radius: 12px;
@@ -850,7 +937,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         }
         .atd-plan-cta--highlight:hover { background: #15803d; }
         .atd-plan-cta--default {
-          border: 1px solid rgba(255,255,255,0.1);
+          border: 1px solid rgba(var(--land-fg-rgb),0.1);
           color: #4ade80;
         }
         .atd-plan-cta--default:hover {
@@ -860,8 +947,8 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
 
         /* Pricing calculator */
         .atd-calc {
-          border: 1px solid rgba(255,255,255,0.08);
-          background: rgba(255,255,255,0.02);
+          border: 1px solid rgba(var(--land-fg-rgb),0.08);
+          background: rgba(var(--land-fg-rgb),0.02);
           border-radius: 20px;
           padding: 24px;
           margin-bottom: 20px;
@@ -872,14 +959,14 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.25);
           display: flex; align-items: center; justify-content: center; flex-shrink: 0;
         }
-        .atd-calc-title { font-size: 15px; font-weight: 700; color: #fff; }
-        .atd-calc-sub { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 1px; }
+        .atd-calc-title { font-size: 15px; font-weight: 700; color: var(--land-text-solid); }
+        .atd-calc-sub { font-size: 12px; color: rgba(var(--land-fg-rgb),0.4); margin-top: 1px; }
         .atd-calc-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 12px; }
-        .atd-calc-label { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.75); }
+        .atd-calc-label { font-size: 13px; font-weight: 600; color: rgba(var(--land-fg-rgb),0.75); }
         .atd-calc-input {
           width: 84px; text-align: right; padding: 6px 10px;
-          border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
-          background: rgba(255,255,255,0.03); color: #fff;
+          border-radius: 10px; border: 1px solid rgba(var(--land-fg-rgb),0.1);
+          background: rgba(var(--land-fg-rgb),0.03); color: var(--land-text-solid);
           font-family: monospace; font-size: 13px; font-weight: 700;
           outline: none;
         }
@@ -889,7 +976,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         }
         .atd-calc-ticks {
           display: flex; justify-content: space-between;
-          font-size: 10px; color: rgba(255,255,255,0.25); font-family: monospace;
+          font-size: 10px; color: rgba(var(--land-fg-rgb),0.25); font-family: monospace;
           margin-bottom: 20px;
         }
         .atd-calc-result {
@@ -902,17 +989,17 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           font-size: 11px; font-weight: 700; text-transform: uppercase;
           letter-spacing: 0.06em; color: #4ade80; margin-bottom: 6px;
         }
-        .atd-calc-rec-name { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -0.02em; }
-        .atd-calc-rec-detail { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px; }
-        .atd-calc-rec-price { font-size: 26px; font-weight: 800; color: #fff; letter-spacing: -0.02em; text-align: right; }
-        .atd-calc-rec-period { font-size: 11px; color: rgba(255,255,255,0.35); text-align: right; }
+        .atd-calc-rec-name { font-size: 22px; font-weight: 800; color: var(--land-text-solid); letter-spacing: -0.02em; }
+        .atd-calc-rec-detail { font-size: 12px; color: rgba(var(--land-fg-rgb),0.4); margin-top: 2px; }
+        .atd-calc-rec-price { font-size: 26px; font-weight: 800; color: var(--land-text-solid); letter-spacing: -0.02em; text-align: right; }
+        .atd-calc-rec-period { font-size: 11px; color: rgba(var(--land-fg-rgb),0.35); text-align: right; }
         .atd-calc-stats {
           display: flex; gap: 20px; flex-wrap: wrap;
           margin-top: 14px; padding-top: 14px;
-          border-top: 1px solid rgba(255,255,255,0.08);
+          border-top: 1px solid rgba(var(--land-fg-rgb),0.08);
         }
-        .atd-calc-stat-label { font-size: 11px; color: rgba(255,255,255,0.4); }
-        .atd-calc-stat-val { font-size: 13px; font-weight: 700; color: #fff; margin-top: 1px; }
+        .atd-calc-stat-label { font-size: 11px; color: rgba(var(--land-fg-rgb),0.4); }
+        .atd-calc-stat-val { font-size: 13px; font-weight: 700; color: var(--land-text-solid); margin-top: 1px; }
         .atd-calc-warning {
           margin-top: 12px; padding: 10px 12px; border-radius: 10px;
           background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.25);
@@ -921,15 +1008,15 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         .atd-calc-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 16px; }
         .atd-calc-chip {
           border-radius: 10px; padding: 8px 4px; text-align: center;
-          border: 1px solid rgba(255,255,255,0.07);
+          border: 1px solid rgba(var(--land-fg-rgb),0.07);
           transition: opacity 0.15s;
         }
-        .atd-calc-chip-name { font-size: 10px; font-weight: 700; color: #fff; }
-        .atd-calc-chip-price { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 2px; font-family: monospace; }
+        .atd-calc-chip-name { font-size: 10px; font-weight: 700; color: var(--land-text-solid); }
+        .atd-calc-chip-price { font-size: 10px; color: rgba(var(--land-fg-rgb),0.4); margin-top: 2px; font-family: monospace; }
 
         /* FAQ */
         .atd-faq {
-          border: 1px solid rgba(255,255,255,0.07);
+          border: 1px solid rgba(var(--land-fg-rgb),0.07);
           border-radius: 14px; overflow: hidden;
           margin-bottom: 8px;
           transition: border-color 0.2s;
@@ -941,15 +1028,15 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           padding: 16px 20px;
           background: none; border: none; cursor: pointer;
           text-align: left;
-          font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.8);
+          font-size: 14px; font-weight: 500; color: rgba(var(--land-fg-rgb),0.8);
           font-family: inherit;
           transition: background 0.15s;
         }
-        .atd-faq__btn:hover { background: rgba(255,255,255,0.03); }
-        .atd-faq--open .atd-faq__btn { color: #fff; }
+        .atd-faq__btn:hover { background: rgba(var(--land-fg-rgb),0.03); }
+        .atd-faq--open .atd-faq__btn { color: var(--land-text-solid); }
         .atd-faq__body {
           padding: 0 20px 18px;
-          font-size: 13px; color: rgba(255,255,255,0.45);
+          font-size: 13px; color: rgba(var(--land-fg-rgb),0.45);
           line-height: 1.75;
         }
 
@@ -977,10 +1064,10 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           font-family: 'Bricolage Grotesque', sans-serif;
           font-size: clamp(1.8rem,3.5vw,2.8rem);
           font-weight: 800; letter-spacing: -0.025em;
-          color: #fff; margin-bottom: 14px;
+          color: var(--land-text-solid); margin-bottom: 14px;
         }
         .atd-cta-sub {
-          font-size: 15px; color: rgba(255,255,255,0.38);
+          font-size: 15px; color: rgba(var(--land-fg-rgb),0.38);
           max-width: 400px; margin: 0 auto 2.5rem;
           line-height: 1.7;
         }
@@ -992,7 +1079,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
 
         /* Footer */
         .atd-footer {
-          border-top: 1px solid rgba(255,255,255,0.05);
+          border-top: 1px solid rgba(var(--land-fg-rgb),0.05);
           padding: 2.5rem 0;
         }
         .atd-footer-inner {
@@ -1010,12 +1097,12 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         }
         .atd-footer-col-title {
           font-size: 10px; font-weight: 700; text-transform: uppercase;
-          letter-spacing: 0.1em; color: rgba(255,255,255,0.18);
+          letter-spacing: 0.1em; color: rgba(var(--land-fg-rgb),0.18);
           margin-bottom: 12px;
         }
         .atd-footer-link {
           display: block; font-size: 13px;
-          color: rgba(255,255,255,0.32); text-decoration: none;
+          color: rgba(var(--land-fg-rgb),0.32); text-decoration: none;
           margin-bottom: 8px; transition: color 0.15s;
           background: none; border: none; cursor: pointer;
           font-family: inherit;
@@ -1025,8 +1112,8 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           display: flex; justify-content: space-between;
           align-items: center; flex-wrap: wrap; gap: 8px;
           padding-top: 1.5rem;
-          border-top: 1px solid rgba(255,255,255,0.05);
-          font-size: 11px; color: rgba(255,255,255,0.14);
+          border-top: 1px solid rgba(var(--land-fg-rgb),0.05);
+          font-size: 11px; color: rgba(var(--land-fg-rgb),0.14);
         }
 
         /* WhatsApp FAB */
@@ -1055,8 +1142,8 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         }
         .atd-modal {
           width: 100%; max-width: 380px;
-          background: #071208;
-          border: 1px solid rgba(255,255,255,0.08);
+          background: var(--land-bg-elevated);
+          border: 1px solid rgba(var(--land-fg-rgb),0.08);
           border-radius: 24px; padding: 2rem;
         }
         .atd-modal-head {
@@ -1065,34 +1152,34 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         }
         .atd-modal-title {
           font-family: 'Bricolage Grotesque', sans-serif;
-          font-size: 18px; font-weight: 700; color: #fff;
+          font-size: 18px; font-weight: 700; color: var(--land-text-solid);
         }
-        .atd-modal-sub { font-size: 13px; color: rgba(255,255,255,0.32); margin-top: 3px; }
+        .atd-modal-sub { font-size: 13px; color: rgba(var(--land-fg-rgb),0.32); margin-top: 3px; }
         .atd-modal-close {
           width: 30px; height: 30px; border-radius: 8px;
-          background: rgba(255,255,255,0.06); border: none;
-          cursor: pointer; color: rgba(255,255,255,0.4);
+          background: rgba(var(--land-fg-rgb),0.06); border: none;
+          cursor: pointer; color: rgba(var(--land-fg-rgb),0.4);
           display: flex; align-items: center; justify-content: center;
           transition: background 0.15s;
           flex-shrink: 0;
         }
-        .atd-modal-close:hover { background: rgba(255,255,255,0.12); }
+        .atd-modal-close:hover { background: rgba(var(--land-fg-rgb),0.12); }
         .atd-modal-label {
           font-size: 11px; font-weight: 700; text-transform: uppercase;
-          letter-spacing: 0.08em; color: rgba(255,255,255,0.35);
+          letter-spacing: 0.08em; color: rgba(var(--land-fg-rgb),0.35);
           margin-bottom: 8px; display: block;
         }
         .atd-modal-input {
           width: 100%; padding: 11px 36px 11px 14px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 12px; color: #fff; font-size: 14px;
+          background: rgba(var(--land-fg-rgb),0.05);
+          border: 1px solid rgba(var(--land-fg-rgb),0.1);
+          border-radius: 12px; color: var(--land-text-solid); font-size: 14px;
           font-family: inherit; outline: none;
           transition: border-color 0.15s;
         }
         .atd-modal-input:focus { border-color: rgba(34,197,94,0.5); }
-        .atd-modal-input::placeholder { color: rgba(255,255,255,0.2); }
-        .atd-modal-hint { font-size: 11px; color: rgba(255,255,255,0.2); margin-top: 6px; }
+        .atd-modal-input::placeholder { color: rgba(var(--land-fg-rgb),0.2); }
+        .atd-modal-hint { font-size: 11px; color: rgba(var(--land-fg-rgb),0.2); margin-top: 6px; }
         .atd-modal-error {
           padding: 10px 14px; border-radius: 10px;
           background: rgba(239,68,68,0.1);
@@ -1113,7 +1200,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         .atd-modal-submit:disabled { opacity: 0.5; cursor: not-allowed; }
         .atd-modal-footer {
           text-align: center; font-size: 12px;
-          color: rgba(255,255,255,0.22); margin-top: 14px;
+          color: rgba(var(--land-fg-rgb),0.22); margin-top: 14px;
         }
         .atd-modal-footer a { color: #4ade80; text-decoration: none; }
         .atd-modal-footer a:hover { text-decoration: underline; }
@@ -1121,7 +1208,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         /* Divider line */
         .atd-divider {
           border: none;
-          border-top: 1px solid rgba(255,255,255,0.05);
+          border-top: 1px solid rgba(var(--land-fg-rgb),0.05);
         }
 
         /* Download button (Android APK) */
@@ -1142,8 +1229,44 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         }
 
         /* Responsive nav links */
+        .atd-nav-burger {
+          display: none;
+          align-items: center; justify-content: center;
+          width: 36px; height: 36px; border-radius: 10px;
+          background: rgba(var(--land-fg-rgb),0.05);
+          border: 1px solid rgba(var(--land-fg-rgb),0.08);
+          color: var(--land-text-solid);
+          cursor: pointer;
+        }
+        .atd-mobile-panel {
+          display: none;
+          flex-direction: column;
+          max-height: 0;
+          overflow: hidden;
+          opacity: 0;
+          transition: max-height 0.3s ease, opacity 0.25s ease, padding 0.3s ease;
+          padding: 0 20px;
+        }
+        .atd-mobile-panel a {
+          text-decoration: none;
+          color: rgba(var(--land-fg-rgb),0.75);
+          font-size: 14.5px;
+          font-weight: 500;
+          padding: 13px 4px;
+          border-bottom: 1px solid rgba(var(--land-fg-rgb),0.07);
+        }
+        .atd-mobile-panel a:last-child { border-bottom: none; }
+        .atd-mobile-panel a:active { color: #4ade80; }
+
         @media(max-width:768px){
           .atd-nav-links { display: none; }
+          .atd-nav-burger { display: flex; }
+          .atd-mobile-panel { display: flex; }
+          .atd-mobile-panel-open {
+            max-height: 400px;
+            opacity: 1;
+            padding: 6px 20px 16px;
+          }
         }
       `}</style>
 
@@ -1164,9 +1287,30 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
             <a href="#faq">FAQ</a>
             <a href="/portal">Parent Portal</a>
           </div>
-          <button className="atd-nav-btn" onClick={() => setShowModal(true)}>
-            Staff Login
-          </button>
+          <div className="atd-nav-actions">
+            <ThemeToggle />
+            <button className="atd-nav-btn" onClick={() => setShowModal(true)}>
+              Staff Login
+            </button>
+            <button
+              className="atd-nav-burger"
+              onClick={() => setMobileNavOpen((v) => !v)}
+              aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileNavOpen}
+            >
+              {mobileNavOpen ? <X size={19} /> : <Menu size={19} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile nav panel */}
+        <div className={`atd-mobile-panel ${mobileNavOpen ? "atd-mobile-panel-open" : ""}`}>
+          <a href="#how" onClick={() => setMobileNavOpen(false)}>How it works</a>
+          <a href="#features" onClick={() => setMobileNavOpen(false)}>Features</a>
+          <a href="#pricing" onClick={() => setMobileNavOpen(false)}>Pricing</a>
+          <a href="#faq" onClick={() => setMobileNavOpen(false)}>FAQ</a>
+          <a href="/portal" onClick={() => setMobileNavOpen(false)}>Parent Portal</a>
+          <a href="/download" onClick={() => setMobileNavOpen(false)}>Download App</a>
         </div>
       </nav>
 
@@ -1359,7 +1503,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
         <div className="atd-step">
           <div className="atd-step-img" style={{ background: "#07120a", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingTop: "2rem", overflow: "hidden", position: "relative" }}>
             <Image src="/images/sms-notify.png" alt="Parent SMS notification" width={240} height={400} style={{ width: "100%", maxWidth: 200, height: "auto" }} />
-            <div style={{ position: "absolute", bottom: 16, right: 16, width: 72, borderRadius: 12, overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)" }}>
+            <div style={{ position: "absolute", bottom: 16, right: 16, width: 72, borderRadius: 12, overflow: "hidden", border: "1px solid rgba(var(--land-fg-rgb),0.1)" }}>
               <Image src="/images/qr-card.png" alt="QR card" width={144} height={200} style={{ width: "100%", height: "auto" }} />
             </div>
           </div>
@@ -1408,11 +1552,11 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           <div>
             <div className="atd-section-tag">Student ID cards</div>
             <h2 className="atd-section-title" style={{ textAlign: "left", marginBottom: "14px" }}>Your school's card. Your school's brand.</h2>
-            <p style={{ fontSize: 15, color: "rgba(255,255,255,0.42)", lineHeight: 1.7, marginBottom: "1.5rem" }}>
+            <p style={{ fontSize: 15, color: "rgba(var(--land-fg-rgb),0.42)", lineHeight: 1.7, marginBottom: "1.5rem" }}>
               Design student ID cards in the Attendy dashboard — add your school logo, name, colours, and the student's photo. Download as PNG and print on plain cardstock or laminate sheets.
             </p>
             {["School logo and custom colours","Student photo and class details","Unique QR code per student","Download PNG, print anywhere"].map(t => (
-              <div key={t} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "rgba(255,255,255,0.6)", marginBottom: 10 }}>
+              <div key={t} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "rgba(var(--land-fg-rgb),0.6)", marginBottom: 10 }}>
                 <CheckCircle size={14} color="#22c55e" style={{ flexShrink: 0 }} /> {t}
               </div>
             ))}
@@ -1423,10 +1567,10 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20 }}>
-            <div style={{ width: 190, borderRadius: 24, overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)", transform: "rotate(-2deg)", boxShadow: "0 24px 60px rgba(0,0,0,0.4)" }}>
+            <div style={{ width: 190, borderRadius: 24, overflow: "hidden", border: "1px solid rgba(var(--land-fg-rgb),0.1)", transform: "rotate(-2deg)", boxShadow: "0 24px 60px rgba(0,0,0,0.4)" }}>
               <Image src="/images/qr-card.png" alt="Student QR card" width={380} height={540} style={{ width: "100%", height: "auto" }} />
             </div>
-            <div style={{ width: 150, borderRadius: 20, overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)", transform: "rotate(1.5deg)", boxShadow: "0 18px 48px rgba(0,0,0,0.35)" }}>
+            <div style={{ width: 150, borderRadius: 20, overflow: "hidden", border: "1px solid rgba(var(--land-fg-rgb),0.1)", transform: "rotate(1.5deg)", boxShadow: "0 18px 48px rgba(0,0,0,0.35)" }}>
               <Image src="/images/scanner-app.png" alt="Scanner app" width={300} height={440} style={{ width: "100%", height: "auto" }} />
             </div>
           </div>
@@ -1527,7 +1671,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
           <h2 className="atd-section-title">Common questions.</h2>
         </div>
         {FAQS.map(f => <Faq key={f.q} q={f.q} a={f.a} />)}
-        <p style={{ textAlign: "center", fontSize: 13, color: "rgba(255,255,255,0.28)", marginTop: "2rem" }}>
+        <p style={{ textAlign: "center", fontSize: 13, color: "rgba(var(--land-fg-rgb),0.28)", marginTop: "2rem" }}>
           Still have questions?{" "}
           <a href="https://wa.me/2348077291745" target="_blank" rel="noopener noreferrer" style={{ color: "#4ade80", textDecoration: "none" }}>
             Chat with us on WhatsApp →
@@ -1572,10 +1716,10 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
                 </div>
                 <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 800, fontSize: 15 }}>Attendy Edu</span>
               </div>
-              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", maxWidth: 200, lineHeight: 1.6 }}>
+              <p style={{ fontSize: 12, color: "rgba(var(--land-fg-rgb),0.22)", maxWidth: 200, lineHeight: 1.6 }}>
                 QR attendance for Nigerian schools. One scan. Instant notification. Complete record.
               </p>
-              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.12)", marginTop: 10 }}>🇳🇬 Proudly Nigerian</p>
+              <p style={{ fontSize: 11, color: "rgba(var(--land-fg-rgb),0.12)", marginTop: 10 }}>🇳🇬 Proudly Nigerian</p>
             </div>
             <div className="atd-footer-links">
               <div>
@@ -1627,7 +1771,7 @@ export default function LandingPage({ prices, limits }: LandingPageProps) {
             <form onSubmit={handleLogin}>
               <label className="atd-modal-label">School ID</label>
               <div style={{ position: "relative" }}>
-                <Search size={13} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.25)" }} />
+                <Search size={13} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "rgba(var(--land-fg-rgb),0.25)" }} />
                 <input
                   type="text"
                   value={slug}
