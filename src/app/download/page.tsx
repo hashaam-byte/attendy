@@ -125,19 +125,30 @@ export default async function DownloadPage() {
           pointer-events: none;
           z-index: 0;
         }
+        .dl-glow-wrap {
+          position: fixed !important;
+          inset: 0;
+          overflow: hidden;
+          pointer-events: none;
+          z-index: 0;
+        }
         .dl-glow-a {
-          position: fixed; top: -220px; left: 50%; transform: translateX(-50%);
+          position: absolute; top: -220px; left: 50%; transform: translateX(-50%);
           width: 700px; height: 500px; border-radius: 50%;
           background: radial-gradient(circle, rgba(34,197,94,0.16), transparent 70%);
-          filter: blur(40px); pointer-events: none; z-index: 0;
+          filter: blur(40px);
         }
         .dl-glow-b {
-          position: fixed; bottom: -260px; right: -160px;
+          position: absolute; bottom: -260px; right: -160px;
           width: 560px; height: 560px; border-radius: 50%;
           background: radial-gradient(circle, rgba(74,222,128,0.10), transparent 70%);
-          filter: blur(60px); pointer-events: none; z-index: 0;
+          filter: blur(60px);
         }
+        /* .dl-glow-wrap sits OUTSIDE this rule's reach on purpose — the glow
+           divs are now its children, not .dl-root's, so this can no longer
+           silently clobber their positioning like it did before. */
         .dl-root > * { position: relative; z-index: 1; }
+        .dl-root > .dl-glow-wrap { position: fixed !important; z-index: 0; }
 
         @keyframes dlFadeUp {
           from { opacity: 0; transform: translateY(18px); }
@@ -285,8 +296,10 @@ export default async function DownloadPage() {
         .dl-step-text strong { color: rgba(255,255,255,0.88); }
       `}</style>
 
-      <div className="dl-glow-a" />
-      <div className="dl-glow-b" />
+      <div className="dl-glow-wrap" aria-hidden="true">
+        <div className="dl-glow-a" />
+        <div className="dl-glow-b" />
+      </div>
 
       <nav className="dl-nav dl-reveal dl-d0">
         <a href="/" className="dl-nav-back">
@@ -375,7 +388,7 @@ export default async function DownloadPage() {
           ) : (
             <div className="dl-empty">
               <AlertCircle size={16} className="shrink-0" style={{ marginTop: 2 }} />
-              <p>No Android build has been published yet. Check back shortly, or <a href="/contact">contact us</a> for a direct link.</p>
+              <p>No Android build has been published yet. Check back shortly, or <a href="https://wa.me/2348077291745?text=Hi%2C%20I%27d%20like%20a%20direct%20link%20to%20the%20Attendy%20app" target="_blank" rel="noopener noreferrer">message us</a> for a direct link.</p>
             </div>
           )}
         </div>
@@ -395,7 +408,7 @@ export default async function DownloadPage() {
             </div>
           </div>
           <p className="dl-ios-note">
-            Not available yet. Want to be notified when it launches? <a href="/contact">Let us know</a> and we&apos;ll reach out.
+            Not available yet. Want to be notified when it launches? <a href="https://wa.me/2348077291745?text=Hi%2C%20please%20notify%20me%20when%20the%20iOS%20app%20is%20ready" target="_blank" rel="noopener noreferrer">Let us know</a> and we&apos;ll reach out.
           </p>
         </div>
 
